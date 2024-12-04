@@ -1,0 +1,237 @@
+For myself.
+
+SDKHooks exposes the following forwards:
+/**
+ * @brief When an entity is created
+ *
+ * @param        entity        Entity index
+ * @param        classname    Class name
+ * @noreturn
+ */
+forward OnEntityCreated(entity, const String:classname[]);
+
+/**
+ * @brief When an entity is destroyed
+ *
+ * @param        entity        Entity index
+ * @noreturn
+ */
+forward OnEntityDestroyed(entity);
+
+/**
+ * @brief When the game description is retrieved
+ *
+ * @param        gameDesc        Game description
+ * @noreturn
+ */
+forward Action:OnGetGameDescription(String:gameDesc[64]);
+
+/**
+ * @brief When the level is initialized
+ *
+ * @param        mapName            Name of the map
+ * @param        mapEntities    Entities of the map
+ * @noreturn
+ */
+forward Action:OnLevelInit(const String:mapName[], String:mapEntities[2097152]); 
+
+These forwards are optionally delegated functions. 
+In effect, you can write a function with the same name into your plugin to call it when the forward occurs.
+
+SDKHook() allows a custom function to be called whenever the Hooked event occurs.
+The function SDKHook() takes three parameters: SDKHook(entityID, SDKHookType, callback_Function).
+SDKHookType's are declared in an enum in sourcemod/scripting/include/sdkhooks.inc.
+
+So, if you wanted to hook every created entities OnTakeDamage, you could do:
+
+public OnEntityCreated(int entity, const char[] classname)
+{    
+	SDKHook(entity, SDKHook_OnTakeDamage, OnTakeDamage);    
+}
+
+And then you could write your custom function that does something whenever an entity takes damage.
+
+public Action OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype){
+    PrintToServer("something!");
+    return Plugin_Continue;
+}
+
+
+
+HookEvent() allows you to do similar things, assigning a callback function to many Source events.
+EX: To hook a custom function into the player_connect event:
+
+public void OnPluginStart(){HookEvent("player_connect", Event_PlayerConnect);}
+
+public void Event_PlayerConnect(Event event, const char[] name, bool dontBroadcast)
+{
+    int client = GetClientOfUserId(event.GetInt("userid"));
+    if (client > 0)
+    {
+        OnClientPutInServer(client);
+    }
+}
+
+
+Only Action's need to return these:
+Plugin_Continue - The original command will be processed, if there was one.
+Plugin_Handled - The original command will not be processed, if there was one.
+Plugin_Stop - The original server command will not be processed, if there was one. Additionally, no further hooks will be called for this command until it is fired again.
+
+-------- ASRD WEAPON NAMES --------
+
+(these need to be ALL LOWERCASE... im just too lazy to do it rn)
+
+// 'heavy weapons'
+asw_Weapon_50CalMG
+asw_Weapon_Autogun
+asw_Weapon_DEagle
+asw_Weapon_Heavy_Rifle
+asw_Weapon_Minigun
+asw_Weapon_Sniper_Rifle
+
+// 'shotguns'
+asw_Weapon_Assault_Shotgun
+asw_Weapon_Devastator
+asw_Weapon_Flechette
+asw_Weapon_Flechette2
+asw_Weapon_Shotgun
+
+// 'melee'
+asw_Weapon_Chainsaw
+asw_Weapon_Fist
+
+// 'rifles'
+asw_Weapon_CombatRifle
+asw_Weapon_PRifle
+asw_Weapon_Rifle
+
+// 'fire'
+asw_Weapon_Flamer
+asw_Weapon_Mining_Laser
+
+asw_Weapon_Flares
+
+// 'explosives'
+asw_Weapon_Grenade_Launcher
+
+// 'medical'
+asw_Weapon_Heal_Gun
+asw_Weapon_HealAmp_Gun
+asw_Weapon_MedRifle
+
+// 'DID YOU SAY SCIENCE!?!?''
+asw_Weapon_Tesla_Gun
+asw_Weapon_Railgun
+asw_Weapon_AR2
+// i think this is something the railgun does?
+asw_Weapon_Ricochet
+
+// 'small weapons'
+asw_Weapon_PDW
+asw_Weapon_Pistol
+
+
+asw_Weapon_T75 (I think this is an end of campaign nuke?)
+
+asw_Weapon_FireExtinguisher
+
+asw_Weapon_Ammo_Bag
+asw_Weapon_Ammo_Satchel
+
+asw_Weapon_Flashlight
+asw_Weapon_Night_Vision
+asw_Weapon_Welder
+asw_Weapon_Bait
+
+asw_Weapon_Blink
+asw_Weapon_Jump_Jet
+
+asw_Weapon_Normal_Armor
+asw_Weapon_Electrified_Armor
+
+asw_Weapon_Medical_Satchel
+asw_Weapon_Medkit
+asw_Weapon_Stim
+asw_Weapon_HealGrenade
+asw_Weapon_Buff_Grenade
+
+asw_Weapon_Freeze_Grenades
+asw_Weapon_Gas_Grenades
+
+asw_Weapon_Grenade_Box
+asw_Weapon_Grenades
+asw_Weapon_Laser_Mines
+asw_Weapon_Hornet_Barrage
+asw_Weapon_Mines
+asw_Weapon_Smart_Bomb
+
+asw_Weapon_Sentry
+asw_Weapon_Sentry_Cannon
+asw_Weapon_Sentry_Flamer
+asw_Weapon_Sentry_Freeze
+asw_Weapon_Tesla_Trap
+
+-------- source(?) DAMAGE TYPES --------
+0	        DMG_GENERIC	    -   Does not make any kind of visual or audible indication of incoming damage, unlike other damage types.
+1	        DMG_CRUSH	    -   The whole screen flashes red even if you're wearing a HEV suit.
+                                Always does 50% of the Damage value every half-second, regardless of difficulty setting.
+2	        DMG_BULLET	    -   Plays bullet impact sounds.
+4	        DMG_SLASH	    -   Displays spurts of blood if player HEV suit power is 0.
+8	        DMG_BURN        -   Plays heat damage sounds. (Something sizzling and the player going "Ouch!".)
+                                The whole screen flashes red even if you're wearing a HEV suit. No HUD damage directions are given.
+                                Tip: For additional indication, you can add an ambient_generic playing hl1/fvox/heat_damage.wav to make the HEV suit go: "Extreme heat damage detected."
+16	        DMG_VEHICLE	    -   prop_vehicle_jeep impacts deal this type of damage.
+                                Listed as "Freeze" in Valve FGDs, since this damage type was previously used for freeze damage in  GoldSrc.
+                                When used in the Half-Life codebase, the HEV suit will display a snowflake icon on the left side of the screen.
+32	        DMG_FALL	    -   Always does 50% of the Damage value every half-second, regardless of difficulty setting.
+                                The HEV suit will not protect you from this type of damage.
+64	        DMG_BLAST	    -   May temporarily deafen the player.
+128	        DMG_CLUB	
+256	        DMG_SHOCK	    -   Sparks for every hit. The whole screen flashes light blue even if you're wearing a HEV suit.
+                                Tip: For additional indication, you can add an ambient_generic playing hl1/fvox/shock_damage.wav to make the HEV suit go: "Electrical damage detected."
+512	        DMG_SONIC	    -   Damage from supersonic objects.
+1024	    DMG_ENERGYBEAM  -   Laser or other high energy beam.
+2048    DMG_PREVENT_PHYSICS_FORCE - Prevent a physics force (e.g. Gravity Gun Jump on Props).
+4096	    DMG_NEVERGIB    -   No damage type will be able to gib victims upon death.
+8192	    DMG_ALWAYSGIB	-   Any damage type can be made to gib victims upon death.
+16384	    DMG_DROWN	    -   The whole screen flashes blue even if you're wearing a HEV suit.
+                                Double HUD damage directions are given.
+                                Plays drowning sounds.
+                                Always does 50% of the Damage value every half-second, regardless of difficulty setting.
+                                The HEV suit will not protect you from this type of damage.
+32768	    DMG_PARALYZE    -   HEV suit warning: "Warning: Bloodtoxin levels detected." (hl1/fvox/blood_toxins.wav)
+            DMG_FORCE_INCAPACITATE 
+65536	    DMG_NERVEGAS	-   HEV suit warning: "Warning: Biohazard detected." (hl1/fvox/biohazard_detected.wav)
+131072	    DMG_POISON      -   Poison headcrabs deal this type of damage.
+                                The whole screen flashes yellow even if you're wearing a HEV suit. (This flash seems to stick sometimes, and may appear the next time the player is hurt.)
+                                The HEV suit will not protect you from this type of damage.
+                                Always does 50% of the Damage value every half-second, regardless of difficulty setting.
+                                HEV suit warns: "Warning: Bloodtoxin levels detected." (hl1/fvox/blood_toxins.wav)
+                                HUD displays: "Neurotoxin Detected Administering Antidote"
+                                The damage received is slowly healed after a delay (even if the player is not wearing a suit, oddly enough).
+262144	    DMG_RADIATION	-   Close proximity to a trigger_hurt with this type of damage will set off the HEV suit's Geiger counter.
+                                The HEV suit will not protect you from this type of damage.
+                                The whole screen flashes white even if you're wearing a HEV suit.
+                                Double HUD damage directions are given.
+                                HEV suit warning: "Warning: Hazardous radiation levels detected." (hl1/fvox/radiation_detected.wav)
+524288	    DMG_DROWNRECOVER -   Used for regeneration of health lost due to drowning damage.
+                                If used on a trigger_hurt, this will not recover health, but deal the damage. However, any trigger_hurt using negative damage values can heal you.
+1048576	    DMG_ACID        -   The whole screen flashes white even if you're wearing a HEV suit.
+            DMG_CHOKE       -   Bug: The flash may reappear the next time the player is hurt.  [todo tested in?]
+                                Double HUD damage directions are given.
+                                HEV suit warning: "Warning: Hazardous chemical detected." (hl1/fvox/chemical_detected.wav)
+                                Listed as "Chemical" in Valve FGDs, since this damage type was previously used for chemical damage in  GoldSrc.
+2097152	    DMG_SLOWBURN    
+            DMG_MELEE 
+4194304	   DMG_REMOVENORAGDOLL - If damage of this type kills the player or an NPC, a ragdoll will not be created.
+                                This bit is set when attempting to use an env_entity_dissolver on a live player.
+                                Listed as "Slow Freeze" in Valve FGDs, since this damage type was previously used for slow freeze damage in  GoldSrc.
+8388608	    DMG_PHYSGUN     -   Damage from the Gravity Gun (e.g. pushing head crabs).
+16777216	DMG_PLASMA      -   Turns the player's screen dark and plays sounds until the player's next footstep.
+33554432	DMG_AIRBOAT     -   Damage from airboat gun.
+67108864	DMG_DISSOLVE    -   Emancipation effect of Combine Energy Balls and the Emancipation Grid (Fizzlers) in  Portal series.
+134217728	DMG_BLAST_SURFACE -  A blast on the surface of water that cannot harm things underwater
+268435456	DMG_DIRECT      -   Damage from being on fire. (DMG_BURN relates to external sources hurting you)
+536870912	DMG_BUCKSHOT    -   Damage from shotguns. (not quite a bullet. Little, rounder, different.)
+1073741824	DMG_HEADSHOT    -   Damage from a headshot.
