@@ -521,9 +521,10 @@ public Action Command_SpawnEntity(int client, int args) {
 }
 
 
+// maybe have this scale based on level of all players alive? vote system to shift it up/down? cool ideas.
 public Action Command_DifficultyScale(int client, int args){
 	if (args < 1) { 
-		ReplyToCommand(client, "Usage: sm_difficultyscale <0-n> (low values will be boring and high values will cause server instability)"); 
+		ReplyToCommand(client, "Usage: sm_difficultyscale <0-n> (low values will be boring and high values will cause server instability - have fun!)"); 
 		return Plugin_Handled;
 	}
 
@@ -555,18 +556,18 @@ public Action Command_DifficultyScale(int client, int args){
     if(difficulty >= 1.5) StripAndChangeServerConVarBool(client, "asw_egg_respawn", true);
     else StripAndChangeServerConVarBool(client, "asw_egg_respawn", false);
 
-// wtf is a harvester?
-// "asw_harverter_suppress_children" = "0" game cheat                               - If set to 1, harvesters won't spawn xenomites
-// "asw_harvester_max_critters" = "5" game cheat                                    - maximum critters the harvester can spawn
-// "asw_harvester_spawn_height" = "16" game cheat                                   - Height above harvester origin to spawn xenomites at
-// asw_harvester_spawn_interval" = "1.0" game cheat                                - Time between spawning a harvesite and starting to spawn another
+    // wtf is a harvester?
+    // "asw_harverter_suppress_children" = "0" game cheat                               - If set to 1, harvesters won't spawn xenomites
+    // "asw_harvester_max_critters" = "5" game cheat                                    - maximum critters the harvester can spawn
+    // "asw_harvester_spawn_height" = "16" game cheat                                   - Height above harvester origin to spawn xenomites at
+    // asw_harvester_spawn_interval" = "1.0" game cheat                                - Time between spawning a harvesite and starting to spawn another
 
     // Maximum distance away from the marines the horde can spawn
     StripAndChangeServerConVarInt(client, "asw_horde_max_distance", RoundToNearest(1500 / difficulty));
     // Minimum distance away from the marines the horde can spawn
     StripAndChangeServerConVarInt(client, "asw_horde_min_distance", RoundToNearest(800 / difficulty));
 
-// asw_horde_override" = "0" game replicated                                       - Forces hordes to spawn
+    // asw_horde_override" = "0" game replicated                                       - Forces hordes to spawn
 
     // Director: Max scale applied to alien spawn interval each spawn
     StripAndChangeServerConVarFloat(client, "asw_interval_change_max", 0.95 / difficulty);
@@ -584,22 +585,22 @@ public Action Command_DifficultyScale(int client, int args){
     // Max number of aliens spawned in a horde batch
     StripAndChangeServerConVarInt(client, "asw_max_alien_batch", RoundToNearest(10 * difficulty));
 
-// "asw_respawn_marine_enable" = "0" min. 0.000000 max. 1.000000 game cheat         - Enables respawning marines.
+    // "asw_respawn_marine_enable" = "0" min. 0.000000 max. 1.000000 game cheat         - Enables respawning marines.
     
     // If there are more awake aliens than this number director will not spawn new hord
     StripAndChangeServerConVarInt(client, "rd_director_max_awake_aliens_for_horde", RoundToNearest(25 * difficulty));
     // If there are more awake aliens than this number director will not spawn new wanderers
     StripAndChangeServerConVarInt(client, "rd_director_max_awake_aliens_for_wanderers", RoundToNearest(20 * difficulty));
 
-// "rd_director_spawner_bias" = "0.9" min. 0.000000 max. 1.000000 game cheat        - 0 (search from the node) to 1 (search from the nearest marine)
-// "rd_director_spawner_range" = "600" game cheat                                   - Radius around expected spawn point that the director can look for spawners
+    // "rd_director_spawner_bias" = "0.9" min. 0.000000 max. 1.000000 game cheat        - 0 (search from the node) to 1 (search from the nearest marine)
+    // "rd_director_spawner_range" = "600" game cheat                                   - Radius around expected spawn point that the director can look for spawners
 
     // If 0 hordes and wanderers cannot spawn in map exit zone. 1 by default
     if(difficulty < 0.75) StripAndChangeServerConVarBool(client, "rd_horde_from_exit", false);
     else StripAndChangeServerConVarBool(client, "rd_horde_from_exit", true);
 
-// "rd_horde_ignore_north_door" = "0" game cheat                                    - If 1 hordes can spawn behind sealed and locked doors to the north from marines.
-// "rd_horde_retry_on_fail" = "1" game cheat                                        - When set to 1 will retry to spawn horde from opposite direction if previous dire
+    // "rd_horde_ignore_north_door" = "0" game cheat                                    - If 1 hordes can spawn behind sealed and locked doors to the north from marines.
+    // "rd_horde_retry_on_fail" = "1" game cheat                                        - When set to 1 will retry to spawn horde from opposite direction if previous dire
 
     // If 1 all spawners will be set to infinitely spawn aliens
     if(difficulty > 2) StripAndChangeServerConVarBool(client, "rd_infinite_spawners", true);
@@ -631,14 +632,12 @@ public Action Command_DifficultyScale(int client, int args){
     StripAndChangeServerConVarInt(client, "rm_prespawn_num_shieldbugs", RoundToNearest(1.0 * difficulty));
     StripAndChangeServerConVarInt(client, "rm_prespawn_num_uber_drones", RoundToNearest(2.0 * difficulty));
 
-/*
-"rd_spawn_ammo" = "0" game cheat replicated                                      - Will spawn an ammo box from 51st killed alien if set to 51
-"rd_spawn_medkits" = "0" game cheat replicated                                   - Will spawn a med kit from 31st killed alien is set to 31
-*/
+    /*
+    "rd_spawn_ammo" = "0" game cheat replicated                                      - Will spawn an ammo box from 51st killed alien if set to 51
+    "rd_spawn_medkits" = "0" game cheat replicated                                   - Will spawn a med kit from 31st killed alien is set to 31
+    */
     return Plugin_Handled;
 }
-
-
 
 /// Strip and change a ConVarInt to another value. This allows modification of otherwise cheat-protected ConVars.
 StripAndChangeServerConVarFloat(int client, String:command[], float value) {
