@@ -87,7 +87,7 @@ public void OnPluginStart()
 
     // Register client console command
     RegConsoleCmd("sm_killcount", Command_KillCount);
-    RegConsoleCmd("sm_spawnentity", Command_SpawnEntity);
+    RegAdminCmd("sm_spawnentity", Command_SpawnEntity, ADMFLAG_GENERIC);
     RegServerCmd("sm_difficultyscale", Command_DifficultyScale);
 
     // Timer for updating the database. So crashes in the middle of a run don't mean losing up to 10 minutes of experience.
@@ -541,7 +541,7 @@ public int GetPlayerKillCount(const char[] sSteamID, int client, bool bNotify){
 /**
  * @brief Console command handler to spawn entities.
  *
- * Allows players to spawn entities using the `sm_spawnentity` command with specified parameters.
+ * Allows admins to spawn entities on their marine using the `sm_spawnentity` command with specified parameters.
  *
  * @param client The client index who issued the command.
  * @param args The number of arguments passed with the command.
