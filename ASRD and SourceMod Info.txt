@@ -86,8 +86,6 @@ Plugin_Stop - The original server command will not be processed, if there was on
 
 -------- ASRD WEAPON ENTITY CLASSNAMES --------
 
-(these need to be ALL LOWERCASE... im just too lazy to do it rn)
-
 // 'heavy weapons'
 asw_weapon_50calmg
 asw_weapon_autogun
