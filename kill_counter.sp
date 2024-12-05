@@ -42,7 +42,7 @@ Database g_hDatabase = null;
 int g_ClientToMarine[MAXPLAYERS + 1];
 
 // Accumulated kills per client
-int g_ClientKillAccum[MAXPLAYERS + 1];
+int g_ClientKillAccumulator[MAXPLAYERS + 1];
 
 // Define a struct to hold player data
 enum struct PlayerData {
@@ -55,7 +55,11 @@ enum struct PlayerData {
 
 PlayerData g_PlayerData[MAXPLAYERS + 1];
 
-// Plugin entry point
+/**
+ * @brief Called when the plugin is started.
+ *
+ * Initializes kill counters, connects to the database, hooks events, registers console commands, and creates a timer for database updates.
+ */
 public void OnPluginStart()
 {
     PrintToServer("[AS:RPG] Initializing Kill Counter!");
@@ -64,7 +68,7 @@ public void OnPluginStart()
     for (int i = 0; i <= MaxClients; i++)
     {
         g_ClientToMarine[i] = -1;
-        g_ClientKillAccum[i] = 0;
+        g_ClientKillAccumulator[i] = 0;
         g_PlayerData[i].experience = 0;
         g_PlayerData[i].level = 1;
         g_PlayerData[i].skill_points = 0;
@@ -77,7 +81,6 @@ public void OnPluginStart()
     // Hook events
     HookEvent("alien_died", OnAlienKilled);
     HookEvent("entity_killed", OnEntityKilled);
-    HookEvent("player_shoot", OnPlayerShoot);
 
     HookEvent("player_connect", Event_PlayerConnect);
     HookEvent("player_disconnect", Event_PlayerDisconnect);
@@ -85,13 +88,17 @@ public void OnPluginStart()
     // Register client console command
     RegConsoleCmd("sm_killcount", Command_KillCount);
     RegConsoleCmd("sm_spawnentity", Command_SpawnEntity);
-    RegConsoleCmd("sm_difficultyscale", Command_DifficultyScale);
+    RegServerCmd("sm_difficultyscale", Command_DifficultyScale);
 
     // Timer for updating the database. So crashes in the middle of a run don't mean losing up to 10 minutes of experience.
     CreateTimer(30.0, Timer_UpdateDatabase, _, TIMER_REPEAT);
 }
 
-// Plugin unload point
+/**
+ * @brief Called when the plugin is unloaded.
+ *
+ * Updates the database one last time and cleans up the database handle.
+ */
 public void OnPluginEnd()
 {
     // Update the database one last time
@@ -104,9 +111,17 @@ public void OnPluginEnd()
     }
 }
 
-// SDKHooks provides the 'OnEntityCreated' forward.
-// I hook every entities OnTakeDamage at creation, because this makes the process simple.
-public OnEntityCreated(int entity, const char[] classname){    
+
+/**
+ * @brief Called when an entity is created in the game.
+ *
+ * Hooks the OnTakeDamage event for the entity and updates client-marine mapping if an ASW marine is created.
+ *
+ * @param entity The entity index of the created entity.
+ * @param classname The classname of the created entity.
+ */
+public void OnEntityCreated(int entity, const char[] classname){    
+    // I hook every entities OnTakeDamage at creation, because this makes the process simple.
     SDKHook(entity, SDKHook_OnTakeDamage, OnTakeDamage);
 
     /*
@@ -122,12 +137,15 @@ public OnEntityCreated(int entity, const char[] classname){
     currentSwarmSizeCounter = 0;
     */
 
-
     // If an asw_marine is created, update the mapping.
     if (StrEqual(classname, "asw_marine")){UpdateClientMarineMapping();}
 }
 
-// Connect to the database
+/**
+ * @brief Connects to the database using the predefined configuration.
+ *
+ * Attempts to establish a connection to the database and initializes necessary tables and skills upon success.
+ */
 public void ConnectToDatabase()
 {
     char error[255];
@@ -142,7 +160,11 @@ public void ConnectToDatabase()
     }
 }
 
-// Create necessary database tables asynchronously
+/**
+ * @brief Creates necessary database tables if they do not exist.
+ *
+ * Creates the `players`, `skills`, and `player_skills` tables in the database.
+ */
 public void CreateTables(){
     char sQuery[1024];
     Handle hQuery;
@@ -174,42 +196,46 @@ public void CreateTables(){
     delete hQuery;    
 }
 
+/**
+ * @brief Handles the player connect event.
+ *
+ * Retrieves the client index from the event and initializes their data in the server.
+ *
+ * @param event The event data.
+ * @param name The name of the event.
+ * @param dontBroadcast Whether to broadcast the event.
+ */
 public void Event_PlayerConnect(Event event, const char[] name, bool dontBroadcast){
     int client = GetClientOfUserId(event.GetInt("userid"));
-    if (client > 0){    OnClientPutInServer(client);    UpdateClientMarineMapping();    }
+    if (client > 0){UpdateClientMarineMapping();}
 }
+
+/**
+ * @brief Handles the player disconnect event.
+ *
+ * Updates the database and client-marine mapping when a player disconnects.
+ *
+ * @param event The event data.
+ * @param name The name of the event.
+ * @param dontBroadcast Whether to broadcast the event.
+ */
 public void Event_PlayerDisconnect(Event event, const char[] name, bool dontBroadcast){
     int client = GetClientOfUserId(event.GetInt("userid"));
     if (client > 0){    UpdateDatabase();    UpdateClientMarineMapping();    }
 }
 
-// When a client is put in the server
-public void OnClientPutInServer(int client)
-{
-    // Get player's Steam ID
-    char sSteamID[32];
-    GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
-
-    // Retrieve player's kill count
-    GetPlayerKillCount(sSteamID, client, true);
-}
-
-
-public Action OnPlayerShoot(Event event, const char[] name, bool dontBroadcast)
-{
-    int userID = event.GetInt("userid");
-    int weaponID = event.GetInt("weapon");
-
-    PrintToServer("[AS:RPG] User %d shot weapon %d.", userID, weaponID)
-
-    // Alter weapon damage by a multiplier; switch based on name? Might just be a bunch of if's, gross.
-    // Also, if altering weapon damage, set a flag.
-
-    // If weapon damage altered flag is true, return Plugin_Changed.
-
-    return Plugin_Continue;
-}
-
+/**
+ * @brief Handles the event when an entity takes damage.
+ *
+ * Adjusts damage based on the victim and attacker classes and their attributes.
+ *
+ * @param victim The entity index of the victim.
+ * @param attacker A reference to the entity index of the attacker.
+ * @param inflictor A reference to the entity index of the inflictor.
+ * @param damage A reference to the damage value.
+ * @param damagetype A reference to the type of damage.
+ * @return Action Whether the plugin has changed the damage value.
+ */
 public Action OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype){
     decl String:VictimClass[64];
     decl String:AttackerClass[64];
@@ -282,7 +308,15 @@ public Action OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
     }
 }
 
-// Hook for when an alien is killed
+/**
+ * @brief Called when an alien is killed.
+ *
+ * Increments the kill counter for the corresponding client who killed the alien.
+ *
+ * @param event The event data.
+ * @param name The name of the event.
+ * @param dontBroadcast Whether to broadcast the event.
+ */
 public void OnAlienKilled(Event event, const char[] name, bool dontBroadcast){
     //int killedAlienClassify = event.GetInt("alien");
     int marineEntityIndex = event.GetInt("marine");
@@ -299,10 +333,18 @@ public void OnAlienKilled(Event event, const char[] name, bool dontBroadcast){
     }
 
     // if the marine that killed the alien has a matching client, increment that client's kill accumulator
-    if (client != -1){    g_ClientKillAccum[client]++;    }
+    if (client != -1){    g_ClientKillAccumulator[client]++;    }
 }
 
-// Hook for when any entity is killed
+/**
+ * @brief Called when any entity is killed.
+ *
+ * Logs details about the killed entity for debugging purposes.
+ *
+ * @param event The event data.
+ * @param name The name of the event.
+ * @param dontBroadcast Whether to broadcast the event.
+ */
 public void OnEntityKilled(Event event, const char[] name, bool dontBroadcast){
     int entindex_killed = event.GetInt("entindex_killed");
 
@@ -318,7 +360,11 @@ public void OnEntityKilled(Event event, const char[] name, bool dontBroadcast){
     }
 }
 
-// Update the mapping of clients to marines
+/**
+ * @brief Updates the mapping of clients to their corresponding marine entities.
+ *
+ * Iterates through all clients and updates the global mapping to associate each client with their marine entity.
+ */
 public void UpdateClientMarineMapping(){
     PrintToServer("[AS:RPG] Updating client-marine mapping!");
 
@@ -337,115 +383,13 @@ public void UpdateClientMarineMapping(){
 //  database callers below this line :) 
 //  VERY SLOW, AFAICT sourcemod only supports SYNCHRONOUS so QUERIES ARE LOCKING, CANNOT CALL THESE FRIVOLOUSLY!
 
-// Timer to update the database with accumulated kills
-public Action Timer_UpdateDatabase(Handle timer){
-    UpdateDatabase();
-    return Plugin_Continue;
-}
 
-// Update the database with accumulated kills
-public void UpdateDatabase(){
-    PrintToServer("[AS:RPG] Updating database!");
-    char sSteamID[32];
-    char sQuery[512];
 
-    for (int client = 1; client <= MaxClients; client++)
-    {
-        if (g_ClientKillAccum[client] > 0 && IsClientInGame(client))
-        {
-            GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
-
-            PrintToServer("[AS:RPG] Adding %d to client %d's total.", g_ClientKillAccum[client], client);
-
-            // Use accumulated kills to update the database
-            Format(sQuery, sizeof(sQuery),
-                "INSERT INTO player_kills (steam_id, kills) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE kills = kills + %d",
-                sSteamID, g_ClientKillAccum[client], g_ClientKillAccum[client]);
-
-            Handle hQuery = SQL_Query(g_hDatabase, sQuery);
-
-            if (hQuery != null){    delete hQuery;  }
-            else{   PrintToServer("[AS:RPG] Failed to update kill count for player %s", sSteamID);   }
-
-            Format(sQuery, sizeof(sQuery),
-                "INSERT INTO players (steam_id, experience) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE experience = experience + %d",
-                sSteamID, g_ClientKillAccum[client], g_ClientKillAccum[client]);
-
-            hQuery = SQL_Query(g_hDatabase, sQuery);
-
-            if (hQuery != null){    delete hQuery;  }
-            else{   PrintToServer("[AS:RPG] Failed to update experience for player %s", sSteamID);   }
-
-            // Reset the accumulated kills for the client
-            g_ClientKillAccum[client] = 0;
-        }
-    }
-}
-
-// Retrieve and optionally display player's kill count
-public void GetPlayerKillCount(const char[] sSteamID, int client, bool bNotify){
-    char sQuery[256];
-
-    Format(sQuery, sizeof(sQuery), "SELECT kills FROM player_kills WHERE steam_id = '%s'", sSteamID);
-    Handle hQuery = SQL_Query(g_hDatabase, sQuery);
-
-    int playerKills = 0;
-    bool hasKills = false;
-
-    if (hQuery == null){
-        PrintToServer("[AS:RPG] Failed to retrieve kill count for player %s", sSteamID);
-    }
-    else{
-        if (SQL_FetchRow(hQuery)){
-            playerKills = SQL_FetchInt(hQuery, 0);
-            hasKills = true;
-        }
-        delete hQuery;
-    }
-
-    if (bNotify){
-        if (hasKills){PrintToChat(client, "Welcome back! Your total kills: %d", playerKills);}
-        else{PrintToChat(client, "Welcome! Let's start counting your kills!");}
-    }
-}
-
-// Client console command to display kill count
-public Action Command_KillCount(int client, int args){
-    if (client <= 0 || !IsClientInGame(client)){    
-        return Plugin_Handled;    
-    }
-
-    // Get player's Steam ID
-    char sSteamID[32];
-    GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
-
-    // Fetch player's kill count
-    char sQuery[256];
-    Format(sQuery, sizeof(sQuery), "SELECT kills FROM players WHERE steam_id = '%s'", sSteamID);
-
-    Handle hQuery = SQL_Query(g_hDatabase, sQuery);
-
-    int playerKills = 0;
-    bool hasKills = false;
-
-    if (hQuery != null){
-        if (SQL_FetchRow(hQuery)){
-            playerKills = SQL_FetchInt(hQuery, 0);
-            hasKills = true;
-        }
-        delete hQuery;
-    }
-
-    // Add any accumulated kills not yet saved to the database
-    playerKills += g_ClientKillAccum[client];
-
-    if (hasKills || g_ClientKillAccum[client] > 0){PrintToChat(client, "Your total kills: %d", playerKills);}
-    else{PrintToChat(client, "You have no recorded kills yet.");}
-
-    return Plugin_Handled;
-}
-
-// Initialize predefined skills
+/**
+ * @brief Initializes predefined skills in the database.
+ *
+ * Inserts skills like "Damage Boost" and "Health Regeneration" into the `skills` table.
+ */
 public void InitializeSkills()
 {
     char sQuery[512];
@@ -472,6 +416,170 @@ public void InitializeSkills()
     // Add more skills as needed following the same pattern
 }
 
+
+/**
+ * @brief Timer callback to periodically update the database with accumulated kills.
+ *
+ * Invoked by a repeating timer to ensure kill data is regularly saved to the database.
+ *
+ * @param timer The handle to the timer.
+ * @return Action Indicates whether the plugin should continue running the timer.
+ */
+public Action Timer_UpdateDatabase(Handle timer){
+    UpdateDatabase();
+    return Plugin_Continue;
+}
+
+/**
+ * @brief Updates the database with accumulated kills for each client.
+ *
+ * Iterates through all clients, updates their kill counts and experience in the database, and resets their accumulated kills.
+ */
+public void UpdateDatabase(){
+    PrintToServer("[AS:RPG] Updating database!");
+    char sSteamID[32];
+    char sQuery[512];
+
+    for (int client = 1; client <= MaxClients; client++)
+    {
+        if (g_ClientKillAccumulator[client] > 0 && IsClientInGame(client))
+        {
+            GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
+
+            PrintToServer("[AS:RPG] Adding %d to client %d's total.", g_ClientKillAccumulator[client], client);
+
+            // Use accumulated kills to update the database
+            Format(sQuery, sizeof(sQuery),
+                "INSERT INTO player_kills (steam_id, kills) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE kills = kills + %d",
+                sSteamID, g_ClientKillAccumulator[client], g_ClientKillAccumulator[client]);
+
+            Handle hQuery = SQL_Query(g_hDatabase, sQuery);
+
+            if (hQuery != null){    delete hQuery;  }
+            else{   PrintToServer("[AS:RPG] Failed to update kill count for player %s", sSteamID);   }
+
+            Format(sQuery, sizeof(sQuery),
+                "INSERT INTO players (steam_id, experience) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE experience = experience + %d",
+                sSteamID, g_ClientKillAccumulator[client], g_ClientKillAccumulator[client]);
+
+            hQuery = SQL_Query(g_hDatabase, sQuery);
+
+            if (hQuery != null){    delete hQuery;  }
+            else{   PrintToServer("[AS:RPG] Failed to update experience for player %s", sSteamID);   }
+
+            // Reset the accumulated kills for the client
+            g_ClientKillAccumulator[client] = 0;
+        }
+    }
+}
+
+
+/**
+ * @brief Console command handler to display a player's kill count.
+ *
+ * Allows players to view their total kills via the `sm_killcount` command.
+ *
+ * @param client The client index who issued the command.
+ * @param args The number of arguments passed with the command.
+ * @return Action Indicates whether the plugin has handled the command.
+ */
+public Action Command_KillCount(int client, int args){
+    if (client <= 0 || !IsClientInGame(client)){return Plugin_Handled;}
+
+    // Get player's Steam ID
+    char sSteamID[32];
+    GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
+    // check if they have any kills
+    int playerKills = GetPlayerKillCount(sSteamID, client, false) + g_ClientKillAccumulator[client];
+    bool hasKills = (playerKills > 0);
+
+    if (hasKills){PrintToChat(client, "Your total kills: %d", playerKills);}
+    else{PrintToChat(client, "You have no recorded kills yet.");}
+    return Plugin_Handled;
+}
+
+/**
+ * @brief Retrieves and optionally displays a player's kill count.
+ *
+ * Fetches the kill count from the database and sends a welcome message to the player if required.
+ *
+ * @param sSteamID The Steam ID of the player.
+ * @param client The client index.
+ * @param bNotify Whether to send a notification to the player.
+ */
+public int GetPlayerKillCount(const char[] sSteamID, int client, bool bNotify){
+    char sQuery[256];
+
+    Format(sQuery, sizeof(sQuery), "SELECT kills FROM player_kills WHERE steam_id = '%s'", sSteamID);
+    Handle hQuery = SQL_Query(g_hDatabase, sQuery);
+
+    int playerKills = 0;
+    bool hasKills = false;
+
+    if (hQuery == null){
+        PrintToServer("[AS:RPG] Failed to retrieve kill count for player %s", sSteamID);
+    }
+    else{
+        if (SQL_FetchRow(hQuery)){
+            playerKills = SQL_FetchInt(hQuery, 0);
+            hasKills = true;
+        }
+        delete hQuery;
+    }
+
+    if (bNotify){
+        if (hasKills){PrintToChat(client, "Welcome back! Your total kills: %d", playerKills);}
+        else{PrintToChat(client, "Welcome! Let's start counting your kills!");}
+    }
+    return playerKills;
+}
+
+
+
+// ------------------------------------------- Generic 'extra' commands here. Relatively fast ones. -------------------------------------------------------
+
+/**
+ * @brief Console command handler to spawn entities.
+ *
+ * Allows players to spawn entities using the `sm_spawnentity` command with specified parameters.
+ *
+ * @param client The client index who issued the command.
+ * @param args The number of arguments passed with the command.
+ * @return Action Indicates whether the plugin has handled the command.
+ */
+public Action Command_SpawnEntity(int client, int args) {
+    if (args < 1) {
+        ReplyToCommand(client, "Usage: sm_spawnentity <classname> <model> <random spawn range float>\n  ex: sm_spawnentity prop_physics models/props_c17/oildrum001.mdl 10.0    sm_spawnentity npc_headcrab 20.0    sm_spawnentity aws_drone 123.4");
+        return Plugin_Handled;
+    }
+
+    char classname[64];
+    GetCmdArg(1, classname, sizeof(classname));
+
+    char model[64];
+    GetCmdArg(1, classname, sizeof(classname));
+
+    float position[3];
+    GetEntPropVector(Swarm_GetMarine(client), Prop_Send, "m_vecOrigin", position);    // get the location of the client's marine
+
+    float angles[3] = {0.0, 0.0, 0.0}; // Default angles
+
+    SpawnEntityByName(classname, position, angles, model, 100.0, true);
+    return Plugin_Handled;
+}
+
+/**
+ * @brief Spawns an entity by its classname at a specified position with optional model and range.
+ *
+ * Creates and positions an entity in the game world, optionally notifying the server.
+ *
+ * @param classname The classname of the entity to spawn.
+ * @param position The base position vector where the entity should be created.
+ * @param angles The orientation angles for the entity.
+ * @param model The model path for the entity (optional).
+ * @param range The random spawn range to offset the position.
+ * @param bNotify Whether to notify the server about the spawned entity.
+ */
 public void SpawnEntityByName(const char[] classname, float position[3], const float angles[3], const char[] model, float range, bool bNotify) {
     // Create the entity by classname
     int entity = CreateEntityByName(classname);
@@ -499,62 +607,64 @@ public void SpawnEntityByName(const char[] classname, float position[3], const f
     if (bNotify) PrintToServer("[AS:RPG] Spawned entity of type %s at position %.2f, %.2f, %.2f", classname, position[0], position[1], position[2]);
 }
 
-public Action Command_SpawnEntity(int client, int args) {
-    if (args < 1) {
-        ReplyToCommand(client, "Usage: sm_spawnentity <classname> <model> <random spawn range float>\n  ex: sm_spawnentity prop_physics models/props_c17/oildrum001.mdl 10.0    sm_spawnentity npc_headcrab 20.0    sm_spawnentity aws_drone 123.4");
-        return Plugin_Handled;
-    }
-
-    char classname[64];
-    GetCmdArg(1, classname, sizeof(classname));
-
-    char model[64];
-    GetCmdArg(1, classname, sizeof(classname));
-
-    float position[3];
-    GetEntPropVector(Swarm_GetMarine(client), Prop_Send, "m_vecOrigin", position);    // get the location of the client's marine
-
-    float angles[3] = {0.0, 0.0, 0.0}; // Default angles
-
-    SpawnEntityByName(classname, position, angles, model, 100.0, true);
-    return Plugin_Handled;
-}
 
 
-// maybe have this scale based on level of all players alive? vote system to shift it up/down? cool ideas.
-public Action Command_DifficultyScale(int client, int args){
+/**
+ * @brief Console command handler to adjust the game's difficulty.
+ *
+ * Allows the server to modify many game settings related to difficulty using the `sm_difficultyscale` command.
+ *
+ * @param client The client index who issued the command.
+ * @param args The number of arguments passed with the command.
+ * @return Action Indicates whether the plugin has handled the command.
+ */
+public Action Command_DifficultyScale(int args){
 	if (args < 1) { 
-		ReplyToCommand(client, "Usage: sm_difficultyscale <0-n> (low values will be boring and high values will cause server instability - have fun!)"); 
+		PrintToServer("Usage: sm_difficultyscale <0-n> (low values will be boring and high values will cause server instability - have fun!)"); 
 		return Plugin_Handled;
 	}
 
 	float difficulty = 1.0;
 	GetCmdArgFloatEx(1, difficulty);
+    AdjustDifficultyConVars(difficulty)
+    return Plugin_Handled;
+}
+
+/**
+ * @brief Function to adjust the game's difficulty scale.
+ *
+ * Modifies many ConVars in an attempt to scale the difficulty.
+ *
+ * @param client The client index who issued the command.
+ * @param args The number of arguments passed with the command.
+ * @return Action Indicates whether the plugin has handled the command.
+ */
+void AdjustDifficultyConVars(float difficulty){
     // ???
-    if(difficulty < 0.25) StripAndChangeServerConVarInt(client, "ai_inhibit_spawners", 0);
-    else StripAndChangeServerConVarInt(client, "ai_inhibit_spawners", 1);
+    if(difficulty < 0.25) StripAndChangeServerConVarInt("ai_inhibit_spawners", 0);
+    else StripAndChangeServerConVarInt("ai_inhibit_spawners", 1);
 
     // Scales the number of aliens each spawner will put out
-    //if(difficulty >= 1) StripAndChangeServerConVarBool(client, "asw_carnage", true);
-    //else StripAndChangeServerConVarBool(client, "asw_carnage", false);
+    //if(difficulty >= 1) StripAndChangeServerConVarBool("asw_carnage", true);
+    //else StripAndChangeServerConVarBool("asw_carnage", false);
 
     // the factor used to scale the amount of aliens in each drone spawner
-    if(difficulty >= 1) StripAndChangeServerConVarFloat(client, "rd_carnage_scale", difficulty);
-    else StripAndChangeServerConVarFloat(client, "rd_carnage_scale", 1.0);
+    if(difficulty >= 1) StripAndChangeServerConVarFloat("rd_carnage_scale", difficulty);
+    else StripAndChangeServerConVarFloat("rd_carnage_scale", 1.0);
 
     // Max time that director keeps spawning aliens when marine intensity has peaked
-    StripAndChangeServerConVarFloat(client, "asw_director_peak_max_time", 3.0 * difficulty);
+    StripAndChangeServerConVarFloat("asw_director_peak_max_time", 3.0 * difficulty);
     // Min time that director keeps spawning aliens when marine intensity has peaked
-    StripAndChangeServerConVarFloat(client, "asw_director_peak_min_time", 1.0 * difficulty);
+    StripAndChangeServerConVarFloat("asw_director_peak_min_time", 1.0 * difficulty);
 
     // Max time that director stops spawning aliens
-    StripAndChangeServerConVarInt(client, "asw_director_relaxed_max_time", RoundToNearest(40 / difficulty));
+    StripAndChangeServerConVarInt("asw_director_relaxed_max_time", RoundToNearest(40 / difficulty));
     // Min time that director stops spawning aliens
-    StripAndChangeServerConVarInt(client, "asw_director_relaxed_min_time", RoundToNearest(25 / difficulty));
+    StripAndChangeServerConVarInt("asw_director_relaxed_min_time", RoundToNearest(25 / difficulty));
 
     // If set, eggs will respawn the parasite inside
-    if(difficulty >= 1.5) StripAndChangeServerConVarBool(client, "asw_egg_respawn", true);
-    else StripAndChangeServerConVarBool(client, "asw_egg_respawn", false);
+    if(difficulty >= 1.5) StripAndChangeServerConVarBool("asw_egg_respawn", true);
+    else StripAndChangeServerConVarBool("asw_egg_respawn", false);
 
     // wtf is a harvester?
     // "asw_harverter_suppress_children" = "0" game cheat                               - If set to 1, harvesters won't spawn xenomites
@@ -563,123 +673,143 @@ public Action Command_DifficultyScale(int client, int args){
     // asw_harvester_spawn_interval" = "1.0" game cheat                                - Time between spawning a harvesite and starting to spawn another
 
     // Maximum distance away from the marines the horde can spawn
-    StripAndChangeServerConVarInt(client, "asw_horde_max_distance", RoundToNearest(1500 / difficulty));
+    StripAndChangeServerConVarInt("asw_horde_max_distance", RoundToNearest(1500 / difficulty));
     // Minimum distance away from the marines the horde can spawn
-    StripAndChangeServerConVarInt(client, "asw_horde_min_distance", RoundToNearest(800 / difficulty));
+    StripAndChangeServerConVarInt("asw_horde_min_distance", RoundToNearest(800 / difficulty));
 
     // asw_horde_override" = "0" game replicated                                       - Forces hordes to spawn
 
     // Director: Max scale applied to alien spawn interval each spawn
-    StripAndChangeServerConVarFloat(client, "asw_interval_change_max", 0.95 / difficulty);
+    StripAndChangeServerConVarFloat("asw_interval_change_max", 0.95 / difficulty);
     // Director: Min scale applied to alien spawn interval each spawn
-    StripAndChangeServerConVarFloat(client, "asw_horde_min_distance", 0.9 / difficulty);
+    StripAndChangeServerConVarFloat("asw_horde_min_distance", 0.9 / difficulty);
 
     // Director: Max time between alien spawns when first entering spawning state
-    StripAndChangeServerConVarInt(client, "asw_interval_initial_max", RoundToNearest(7 / difficulty));
+    StripAndChangeServerConVarInt("asw_interval_initial_max", RoundToNearest(7 / difficulty));
     // Director: Min time between alien spawns when first entering spawning state
-    StripAndChangeServerConVarInt(client, "asw_interval_initial_min", RoundToNearest(5 / difficulty));
+    StripAndChangeServerConVarInt("asw_interval_initial_min", RoundToNearest(5 / difficulty));
 
     // Director: Min time between alien spawns.
-    StripAndChangeServerConVarFloat(client, "asw_interval_min", 1 / difficulty);
+    StripAndChangeServerConVarFloat("asw_interval_min", 1 / difficulty);
 
     // Max number of aliens spawned in a horde batch
-    StripAndChangeServerConVarInt(client, "asw_max_alien_batch", RoundToNearest(10 * difficulty));
+    StripAndChangeServerConVarInt("asw_max_alien_batch", RoundToNearest(10 * difficulty));
 
     // "asw_respawn_marine_enable" = "0" min. 0.000000 max. 1.000000 game cheat         - Enables respawning marines.
     
     // If there are more awake aliens than this number director will not spawn new hord
-    StripAndChangeServerConVarInt(client, "rd_director_max_awake_aliens_for_horde", RoundToNearest(25 * difficulty));
+    StripAndChangeServerConVarInt("rd_director_max_awake_aliens_for_horde", RoundToNearest(25 * difficulty));
     // If there are more awake aliens than this number director will not spawn new wanderers
-    StripAndChangeServerConVarInt(client, "rd_director_max_awake_aliens_for_wanderers", RoundToNearest(20 * difficulty));
+    StripAndChangeServerConVarInt("rd_director_max_awake_aliens_for_wanderers", RoundToNearest(20 * difficulty));
 
     // "rd_director_spawner_bias" = "0.9" min. 0.000000 max. 1.000000 game cheat        - 0 (search from the node) to 1 (search from the nearest marine)
     // "rd_director_spawner_range" = "600" game cheat                                   - Radius around expected spawn point that the director can look for spawners
 
     // If 0 hordes and wanderers cannot spawn in map exit zone. 1 by default
-    if(difficulty < 0.75) StripAndChangeServerConVarBool(client, "rd_horde_from_exit", false);
-    else StripAndChangeServerConVarBool(client, "rd_horde_from_exit", true);
+    if(difficulty < 0.75) StripAndChangeServerConVarBool("rd_horde_from_exit", false);
+    else StripAndChangeServerConVarBool("rd_horde_from_exit", true);
 
     // "rd_horde_ignore_north_door" = "0" game cheat                                    - If 1 hordes can spawn behind sealed and locked doors to the north from marines.
     // "rd_horde_retry_on_fail" = "1" game cheat                                        - When set to 1 will retry to spawn horde from opposite direction if previous dire
 
     // If 1 all spawners will be set to infinitely spawn aliens
-    if(difficulty > 2) StripAndChangeServerConVarBool(client, "rd_infinite_spawners", true);
-    else StripAndChangeServerConVarBool(client, "rd_infinite_spawners", false);
+    if(difficulty > 2) StripAndChangeServerConVarBool("rd_infinite_spawners", true);
+    else StripAndChangeServerConVarBool("rd_infinite_spawners", false);
 
     // Chance to spawn a zombine when a marine dies from an alien
-    if(difficulty > 0.5) StripAndChangeServerConVarFloat(client, "rd_marine_spawn_zombine_on_death_chance", 1.0);
-    else StripAndChangeServerConVarFloat(client, "rd_marine_spawn_zombine_on_death_chance", 0.0);
+    if(difficulty > 0.5) StripAndChangeServerConVarFloat("rd_marine_spawn_zombine_on_death_chance", 1.0);
+    else StripAndChangeServerConVarFloat("rd_marine_spawn_zombine_on_death_chance", 0.0);
     
     // If 1 and Onslaught is enabled an npc_antlionguard will be prespawned somewhere on the map
-    if(difficulty > 1.5) StripAndChangeServerConVarBool(client, "rd_prespawn_antlionguard", true);
-    else StripAndChangeServerConVarBool(client, "rd_prespawn_antlionguard", false);
+    if(difficulty > 1.5) StripAndChangeServerConVarBool("rd_prespawn_antlionguard", true);
+    else StripAndChangeServerConVarBool("rd_prespawn_antlionguard", false);
     
     // If 1 and Onslaught is enabled an npc_antlionguard will be prespawned somewhere on the map
-    if(difficulty > 1.5) StripAndChangeServerConVarBool(client, "rd_prespawn_scale", true);
-    else StripAndChangeServerConVarBool(client, "rd_prespawn_scale", false);
+    if(difficulty > 1.5) StripAndChangeServerConVarBool("rd_prespawn_scale", true);
+    else StripAndChangeServerConVarBool("rd_prespawn_scale", false);
 
     // Num biomass to randomly spawn if rd_prespawn_scale 1
-    StripAndChangeServerConVarInt(client, "rm_prespawn_num_biomass", RoundToNearest(3.0 * difficulty));
+    StripAndChangeServerConVarInt("rm_prespawn_num_biomass", RoundToNearest(3.0 * difficulty));
     // Num aliens to randomly spawn if rd_prespawn_scale 1
-    StripAndChangeServerConVarInt(client, "rm_prespawn_num_boomers", RoundToNearest(3.0 * difficulty));
-    StripAndChangeServerConVarInt(client, "rm_prespawn_num_buzzers", RoundToNearest(1.0 * difficulty));
-    StripAndChangeServerConVarInt(client, "rm_prespawn_num_drones", RoundToNearest(15.0 * difficulty));
-    StripAndChangeServerConVarInt(client, "rm_prespawn_num_harvesters", RoundToNearest(4.0 * difficulty));
-    StripAndChangeServerConVarInt(client, "rm_prespawn_num_mortars", RoundToNearest(2.0 * difficulty));
-    StripAndChangeServerConVarInt(client, "rm_prespawn_num_parasites", RoundToNearest(7.0 * difficulty));
-    StripAndChangeServerConVarInt(client, "rm_prespawn_num_rangers", RoundToNearest(5.0 * difficulty));
-    StripAndChangeServerConVarInt(client, "rm_prespawn_num_shamans", RoundToNearest(5.0 * difficulty));
-    StripAndChangeServerConVarInt(client, "rm_prespawn_num_shieldbugs", RoundToNearest(1.0 * difficulty));
-    StripAndChangeServerConVarInt(client, "rm_prespawn_num_uber_drones", RoundToNearest(2.0 * difficulty));
+    StripAndChangeServerConVarInt("rm_prespawn_num_boomers", RoundToNearest(3.0 * difficulty));
+    StripAndChangeServerConVarInt("rm_prespawn_num_buzzers", RoundToNearest(1.0 * difficulty));
+    StripAndChangeServerConVarInt("rm_prespawn_num_drones", RoundToNearest(15.0 * difficulty));
+    StripAndChangeServerConVarInt("rm_prespawn_num_harvesters", RoundToNearest(4.0 * difficulty));
+    StripAndChangeServerConVarInt("rm_prespawn_num_mortars", RoundToNearest(2.0 * difficulty));
+    StripAndChangeServerConVarInt("rm_prespawn_num_parasites", RoundToNearest(7.0 * difficulty));
+    StripAndChangeServerConVarInt("rm_prespawn_num_rangers", RoundToNearest(5.0 * difficulty));
+    StripAndChangeServerConVarInt("rm_prespawn_num_shamans", RoundToNearest(5.0 * difficulty));
+    StripAndChangeServerConVarInt("rm_prespawn_num_shieldbugs", RoundToNearest(1.0 * difficulty));
+    StripAndChangeServerConVarInt("rm_prespawn_num_uber_drones", RoundToNearest(2.0 * difficulty));
 
     /*
     "rd_spawn_ammo" = "0" game cheat replicated                                      - Will spawn an ammo box from 51st killed alien if set to 51
     "rd_spawn_medkits" = "0" game cheat replicated                                   - Will spawn a med kit from 31st killed alien is set to 31
     */
-    return Plugin_Handled;
 }
 
-/// Strip and change a ConVarInt to another value. This allows modification of otherwise cheat-protected ConVars.
-StripAndChangeServerConVarFloat(int client, String:command[], float value) {
+/**
+ * @brief Helper function to modify a server ConVar of type float without using sv_cheats.
+ *
+ * Strips the FCVAR_CHEAT flag, sets the new value, and restores the original flags.
+ *
+ * @param client The client index who initiated the change.
+ * @param command The name of the ConVar to modify.
+ * @param value The new float value to set.
+ */
+void StripAndChangeServerConVarFloat(String:command[], float value) {
     new ConVar:conVar = FindConVar(command);
     if (conVar == INVALID_HANDLE) {
         PrintToServer("ConVar '%s' not found or invalid.", command);
         return;
     }
-
     new flags = GetCommandFlags(command);
     SetCommandFlags(command, flags & ~FCVAR_CHEAT);
     SetConVarFloat(conVar, value, false, false);
     SetCommandFlags(command, flags);
-	LogAction(client, -1, "[NOTICE]: (%L) set %s to %f", client, command, value);	
+	LogAction(0, -1, "[NOTICE]: (%L) set %s to %d", 0, command, value);		
 }
 
-/// Strip and change a ConVarBool to another value. This allows modification of otherwise cheat-protected ConVars.
-StripAndChangeServerConVarBool(client, String:command[], bool value) {
+/**
+ * @brief Helper function to modify a server ConVar of type bool without using sv_cheats.
+ *
+ * Strips the FCVAR_CHEAT flag, sets the new value, and restores the original flags.
+ *
+ * @param client The client index who initiated the change.
+ * @param command The name of the ConVar to modify.
+ * @param value The new bool value to set.
+ */
+void StripAndChangeServerConVarBool(String:command[], bool value) {
     new ConVar:conVar = FindConVar(command);
     if (conVar == INVALID_HANDLE) {
         PrintToServer("ConVar '%s' not found or invalid.", command);
         return;
     }
-
     new flags = GetCommandFlags(command);
     SetCommandFlags(command, flags & ~FCVAR_CHEAT);
     SetConVarBool(conVar, value, false, false);
     SetCommandFlags(command, flags);
-	LogAction(client, -1, "[NOTICE]: (%L) set %s to %i", client, command, value);	
+	LogAction(0, -1, "[NOTICE]: (%L) set %s to %d", 0, command, value);	
 }
 
-/// Strip and change a ConVarInt to another value. This allows modification of otherwise cheat-protected ConVars.
-StripAndChangeServerConVarInt(int client, String:command[], int value) {
+/**
+ * @brief Helper function to modify a server ConVar of type int without using sv_cheats.
+ *
+ * Strips the FCVAR_CHEAT flag, sets the new value, and restores the original flags.
+ *
+ * @param client The client index who initiated the change.
+ * @param command The name of the ConVar to modify.
+ * @param value The new integer value to set.
+ */
+void StripAndChangeServerConVarInt(String:command[], int value) {
     new ConVar:conVar = FindConVar(command);
     if (conVar == INVALID_HANDLE) {
         PrintToServer("ConVar '%s' not found or invalid.", command);
         return;
     }
-
     new flags = GetCommandFlags(command);
     SetCommandFlags(command, flags & ~FCVAR_CHEAT);
     SetConVarInt(conVar, value, false, false);
     SetCommandFlags(command, flags);
-	LogAction(client, -1, "[NOTICE]: (%L) set %s to %d", client, command, value);	
+	LogAction(0, -1, "[NOTICE]: (%L) set %s to %d", 0, command, value);	
 }
