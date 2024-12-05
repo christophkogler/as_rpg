@@ -73,6 +73,11 @@ public void Event_PlayerConnect(Event event, const char[] name, bool dontBroadca
 }
 
 
+Getting an entities location:
+new Float:position[3];
+GetEntPropVector(entity, Prop_Send, "m_vecOrigin", position);
+
+
 Only Action's need to return these:
 Plugin_Continue - The original command will be processed, if there was one.
 Plugin_Handled - The original command will not be processed, if there was one.
