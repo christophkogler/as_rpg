@@ -36,7 +36,7 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 	if (strcmp(gamedir, "swarm") != 0)
 	{
 		strcopy(error, err_max, "This plugin is only supported on Alien Swarm");
-		return APLRes_Failure;
+		//return APLRes_Failure;
 	}
 	
 	CreateNative("Swarm_IsGameActive", IsGameActive);
