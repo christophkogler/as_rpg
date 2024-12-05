@@ -239,3 +239,27 @@ asw_weapon_tesla_trap
 268435456	DMG_DIRECT      -   Damage from being on fire. (DMG_BURN relates to external sources hurting you)
 536870912	DMG_BUCKSHOT    -   Damage from shotguns. (not quite a bullet. Little, rounder, different.)
 1073741824	DMG_HEADSHOT    -   Damage from a headshot.
+
+Admin flags
+Flags are represented in sourcemod by the enums ADMFLAG_<type>, all caps. Ex: ADMFLAG_GENERIC, ADMFLAG_ROOT, ADMFLAG_BAN.
+reservation	a	Reserved slot access.
+generic		b	Generic admin; required for admins.
+kick		c	Kick other players.
+ban		d	Ban other players.
+unban		e	Remove bans.
+slay		f	Slay/harm other players.
+changemap	g	Change the map or major gameplay features.
+cvar		h	Change most cvars.
+config		i	Execute config files.
+chat		j	Special chat privileges.
+vote		k	Start or create votes.
+password	l	Set a password on the server.
+rcon		m	Use RCON commands.
+cheats		n	Change sv_cheats or use cheating commands.
+root		z	Magically enables all flags and ignores immunity values.
+custom1		o	Custom Group 1.
+custom2		p	Custom Group 2.
+custom3		q	Custom Group 3.
+custom4		r	Custom Group 4.
+custom5		s	Custom Group 5.
+custom6		t	Custom Group 6.
