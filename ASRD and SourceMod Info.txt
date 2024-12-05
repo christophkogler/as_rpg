@@ -53,12 +53,13 @@ And then you could write your custom function that does something whenever an en
 
 public Action OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damagetype){
     PrintToServer("something!");
-    return Plugin_Continue;
+    return Plugin_Continue; // if you haven't changed anything and still want the 'normal' OnTakeDamage to execute.
+    // return Plugin_Changed; // if you HAVE changed any incoming parameters, ie modifying damage
 }
 
 
 
-HookEvent() allows you to do similar things, assigning a callback function to many Source events.
+HookEvent() allows you to do something similar. It allows assigning a callback function to most Source events.
 EX: To hook a custom function into the player_connect event:
 
 public void OnPluginStart(){HookEvent("player_connect", Event_PlayerConnect);}
@@ -78,104 +79,104 @@ new Float:position[3];
 GetEntPropVector(entity, Prop_Send, "m_vecOrigin", position);
 
 
-Only Action's need to return these:
+Only the Action type needs to return one of these:
 Plugin_Continue - The original command will be processed, if there was one.
 Plugin_Handled - The original command will not be processed, if there was one.
 Plugin_Stop - The original server command will not be processed, if there was one. Additionally, no further hooks will be called for this command until it is fired again.
 
--------- ASRD WEAPON NAMES --------
+-------- ASRD WEAPON ENTITY CLASSNAMES --------
 
 (these need to be ALL LOWERCASE... im just too lazy to do it rn)
 
 // 'heavy weapons'
-asw_Weapon_50CalMG
-asw_Weapon_Autogun
-asw_Weapon_DEagle
-asw_Weapon_Heavy_Rifle
-asw_Weapon_Minigun
-asw_Weapon_Sniper_Rifle
+asw_weapon_50calmg
+asw_weapon_autogun
+asw_weapon_deagle
+asw_weapon_heavy_rifle
+asw_weapon_minigun
+asw_weapon_sniper_rifle
 
 // 'shotguns'
-asw_Weapon_Assault_Shotgun
-asw_Weapon_Devastator
-asw_Weapon_Flechette
-asw_Weapon_Flechette2
-asw_Weapon_Shotgun
+asw_weapon_assault_shotgun
+asw_weapon_devastator
+asw_weapon_flechette
+asw_weapon_flechette2
+asw_weapon_shotgun
 
 // 'melee'
-asw_Weapon_Chainsaw
-asw_Weapon_Fist
+asw_weapon_chainsaw
+asw_weapon_fist
 
 // 'rifles'
-asw_Weapon_CombatRifle
-asw_Weapon_PRifle
-asw_Weapon_Rifle
+asw_weapon_combatrifle
+asw_weapon_prifle
+asw_weapon_rifle
 
 // 'fire'
-asw_Weapon_Flamer
-asw_Weapon_Mining_Laser
+asw_weapon_flamer
+asw_weapon_mining_laser
 
-asw_Weapon_Flares
+asw_weapon_flares
 
 // 'explosives'
-asw_Weapon_Grenade_Launcher
+asw_weapon_grenade_launcher
 
 // 'medical'
-asw_Weapon_Heal_Gun
-asw_Weapon_HealAmp_Gun
-asw_Weapon_MedRifle
+asw_weapon_heal_gun
+asw_weapon_healamp_gun
+asw_weapon_medrifle
 
-// 'DID YOU SAY SCIENCE!?!?''
-asw_Weapon_Tesla_Gun
-asw_Weapon_Railgun
-asw_Weapon_AR2
+// 'did you say science!?!?''
+asw_weapon_tesla_gun
+asw_weapon_railgun
+asw_weapon_ar2
 // i think this is something the railgun does?
-asw_Weapon_Ricochet
+asw_weapon_ricochet
 
 // 'small weapons'
-asw_Weapon_PDW
-asw_Weapon_Pistol
+asw_weapon_pdw
+asw_weapon_pistol
 
 
-asw_Weapon_T75 (I think this is an end of campaign nuke?)
+asw_weapon_t75 (i think this is an end of campaign nuke?)
 
-asw_Weapon_FireExtinguisher
+asw_weapon_fireextinguisher
 
-asw_Weapon_Ammo_Bag
-asw_Weapon_Ammo_Satchel
+asw_weapon_ammo_bag
+asw_weapon_ammo_satchel
 
-asw_Weapon_Flashlight
-asw_Weapon_Night_Vision
-asw_Weapon_Welder
-asw_Weapon_Bait
+asw_weapon_flashlight
+asw_weapon_night_vision
+asw_weapon_welder
+asw_weapon_bait
 
-asw_Weapon_Blink
-asw_Weapon_Jump_Jet
+asw_weapon_blink
+asw_weapon_jump_jet
 
-asw_Weapon_Normal_Armor
-asw_Weapon_Electrified_Armor
+asw_weapon_normal_armor
+asw_weapon_electrified_armor
 
-asw_Weapon_Medical_Satchel
-asw_Weapon_Medkit
-asw_Weapon_Stim
-asw_Weapon_HealGrenade
-asw_Weapon_Buff_Grenade
+asw_weapon_medical_satchel
+asw_weapon_medkit
+asw_weapon_stim
+asw_weapon_healgrenade
+asw_weapon_buff_grenade
 
-asw_Weapon_Freeze_Grenades
-asw_Weapon_Gas_Grenades
+asw_weapon_freeze_grenades
+asw_weapon_gas_grenades
 
-asw_Weapon_Grenade_Box
-asw_Weapon_Grenades
-asw_Weapon_Laser_Mines
-asw_Weapon_Hornet_Barrage
-asw_Weapon_Mines
-asw_Weapon_Smart_Bomb
+asw_weapon_grenade_box
+asw_weapon_grenades
+asw_weapon_laser_mines
+asw_weapon_hornet_barrage
+asw_weapon_mines
+asw_weapon_smart_bomb
 
-asw_Weapon_Sentry
-asw_Weapon_Sentry_Cannon
-asw_Weapon_Sentry_Flamer
-asw_Weapon_Sentry_Freeze
-asw_Weapon_Tesla_Trap
+asw_weapon_sentry
+asw_weapon_sentry_cannon
+asw_weapon_sentry_flamer
+asw_weapon_sentry_freeze
+asw_weapon_tesla_trap
 
 -------- source(?) DAMAGE TYPES --------
 0	        DMG_GENERIC	    -   Does not make any kind of visual or audible indication of incoming damage, unlike other damage types.
