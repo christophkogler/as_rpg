@@ -1,3 +1,10 @@
+Thanks to swarmtools author psychonic.
+
+Plugins I took inspiration from:
+ - skyrpg (author exSkye) 
+ - all4dead2 (author James Richardson (grandwazir))
+ - EasyPluginMaker (author NaathySz)
+
 For myself.
 
 SDKHooks exposes the following forwards:
