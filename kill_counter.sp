@@ -13,7 +13,7 @@ TO-DO:
 
 
 
-    -   Damage boost goes forever, resistances cap at 99%, minimum damage to marines is 1. Even at 99%, getting hit 100 times by drones = die.
+    -   Damage boost goes forever, resistances cap at 99%, minimum damage to marines is 1(?). Even at 99%, getting hit 100 times by drones = die.
 */
 
 #include <sourcemod>
@@ -30,21 +30,25 @@ public Plugin myinfo = {
     url = "https://github.com/christophkogler/as_rpg"
 };
 
-// Define weapon damage increases?
 
+// ---------------------------- Definitions, global variables, and enums. ---------------------------------
 // Database configuration name (as defined in databases.cfg)
 #define DATABASE_CONFIG "default"
 
-// Global database handle
-Database g_hDatabase = null;
+const float ExperienceSharingRate = 0.25; // 0 - inf. greather than 1 would be kind of dumb.
 
-// Mapping from client index to marine entity index
+Database g_hDatabase = null; // Global database handle
+
 int g_ClientToMarine[MAXPLAYERS + 1];
-
-// Accumulated kills per client
 int g_ClientKillAccumulator[MAXPLAYERS + 1];
+int g_ClientExperienceAccumulator[MAXPLAYERS + 1];
+PlayerData g_PlayerData[MAXPLAYERS + 1];
 
-// Define a struct to hold player data
+/**
+ * @brief Struct to hold player-specific data.
+ *
+ * Contains experience points, level, skill points, and kill count for each player.
+ */
 enum struct PlayerData {
     int experience;
     int level;
@@ -53,8 +57,33 @@ enum struct PlayerData {
     //Dictionary skills; // To hold skill_id and skill_level
 }
 
-PlayerData g_PlayerData[MAXPLAYERS + 1];
+/**
+ * @brief Enumeration for identifying different table types during creation.
+ *
+ * Used to determine which table has been processed in the OnCreateTableFinished callback.
+ */
+enum TableType {
+    TableType_Players = 1,
+    TableType_Skills = 2,
+    TableType_PlayerSkills = 3
+};
 
+/**
+ * @brief Enumeration for identifying different skill types during initialization.
+ *
+ * Used to determine which skill has been processed in the OnInitializeSkillFinished callback.
+ */
+enum SkillType {
+    SkillType_DamageBoost = 1,
+    SkillType_HealthRegen = 2
+};
+// ----------------------------------------------------------------------------------------------------------
+
+
+
+
+
+// ------------------------- Plugin utility functions. ----------------------------------------------------
 /**
  * @brief Called when the plugin is started.
  *
@@ -78,19 +107,16 @@ public void OnPluginStart()
 
     ConnectToDatabase();
 
-    // Hook events
     HookEvent("alien_died", OnAlienKilled);
     HookEvent("entity_killed", OnEntityKilled);
 
     HookEvent("player_connect", Event_PlayerConnect);
     HookEvent("player_disconnect", Event_PlayerDisconnect);
 
-    // Register client console command
     RegConsoleCmd("sm_killcount", Command_KillCount);
     RegAdminCmd("sm_spawnentity", Command_SpawnEntity, ADMFLAG_GENERIC);
     RegServerCmd("sm_difficultyscale", Command_DifficultyScale);
 
-    // Timer for updating the database. So crashes in the middle of a run don't mean losing up to 10 minutes of experience.
     CreateTimer(30.0, Timer_UpdateDatabase, _, TIMER_REPEAT);
 }
 
@@ -110,7 +136,325 @@ public void OnPluginEnd()
         g_hDatabase = null;
     }
 }
+//--------------------------------------------------------------------------------------------
 
+
+
+
+
+// ------------------------- Database interactions. ------------------------------
+/**
+ * @brief Initiates an asynchronous connection to the database.
+ */
+public void ConnectToDatabase(){
+    SQL_TConnect(OnDatabaseConnected, DATABASE_CONFIG, 0);
+}
+
+/**
+ * @brief Creates necessary database tables if they do not exist.
+ *
+ * Executes asynchronous SQL queries to ensure the required tables are present in the database.
+ */
+public void CreateTables(){
+    SQL_TQuery(g_hDatabase, OnCreateTableFinished,
+        "CREATE TABLE IF NOT EXISTS `players` (`steam_id` VARCHAR(32) NOT NULL PRIMARY KEY, `experience` INT NOT NULL DEFAULT 0, `level` INT NOT NULL DEFAULT 1, `skill_points` INT NOT NULL DEFAULT 0, `kills` INT NOT NULL DEFAULT 0);", 
+        TableType_Players);
+
+    SQL_TQuery(g_hDatabase, OnCreateTableFinished, 
+        "CREATE TABLE IF NOT EXISTS `skills` ( `skill_id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY, `name` VARCHAR(64) NOT NULL, `description` TEXT, `max_level` INT NOT NULL DEFAULT 1);", 
+        TableType_Skills);
+
+    SQL_TQuery(g_hDatabase, OnCreateTableFinished, 
+        "CREATE TABLE IF NOT EXISTS `player_skills` ( `steam_id` VARCHAR(32) NOT NULL, `skill_id` INT NOT NULL, `skill_level` INT NOT NULL DEFAULT 1, PRIMARY KEY (`steam_id`, `skill_id`), FOREIGN KEY (`steam_id`) REFERENCES `players`(`steam_id`) ON DELETE CASCADE, FOREIGN KEY (`skill_id`) REFERENCES `skills`(`skill_id`) ON DELETE CASCADE);", 
+        TableType_PlayerSkills);
+}
+
+/**
+ * @brief Initializes predefined skills in the database.
+ *
+ * Inserts skills like "Damage Boost" and "Health Regeneration" into the `skills` table.
+ */
+public void InitializeSkills(){
+    SQL_TQuery(g_hDatabase, OnInitializeSkillFinished, 
+        "INSERT INTO `skills` (`name`, `description`, `max_level`) VALUES ('Damage Boost', 'Increases your damage output.', 5) ON DUPLICATE KEY UPDATE `name` = `name`;", 
+        SkillType_DamageBoost);
+
+    SQL_TQuery(g_hDatabase, OnInitializeSkillFinished, 
+        "INSERT INTO `skills` (`name`, `description`, `max_level`) VALUES ('Health Regeneration', 'Regenerates your health over time.', 3) ON DUPLICATE KEY UPDATE `name` = `name`;", 
+        SkillType_HealthRegen);
+}
+
+/**
+ * @brief Initiates an asynchronous query to retrieve a player's kill count.
+ *
+ * @param sSteamID The Steam ID of the player.
+ * @param client The client index requesting the kill count.
+ * @param bNotify Whether to send a notification to the player upon retrieval.
+ * @return int Returns 0 as the result is handled asynchronously.
+ */
+public int GetPlayerKillCount(const char[] sSteamID, int client, bool bNotify) { 
+    // Create a handle to store the context data
+    Handle hContext = CreateArray(1); 
+    PushArrayCell(hContext, view_as<int>(client)); // Pack client
+    PushArrayCell(hContext, bNotify ? 1 : 0);     // Pack bNotify
+    PushArrayString(hContext, sSteamID);          // Pack sSteamID
+
+    char sQuery[256];
+    Format(sQuery, sizeof(sQuery), "SELECT kills FROM player_kills WHERE steam_id = '%s'", sSteamID);
+    PrintToServer("Client %d initialized database query for their kill count!", client);
+
+    SQL_TQuery(g_hDatabase, OnGetPlayerKillCountFinished, sQuery, hContext);
+
+    return 0;
+}
+
+/**
+ * @brief Updates the database with accumulated kills and experience for each client.
+ *
+ * Iterates through all clients, updates their kill counts and experience in the database, and resets their accumulated counters.
+ */
+public void UpdateDatabase(){
+    PrintToServer("[AS:RPG] Updating database with accumulated kills and experience.");
+    char sSteamID[32];
+    char sQuery[512];
+
+    for (int client = 1; client <= MaxClients; client++){
+        if (IsClientInGame(client)){
+            GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
+
+            // Update kills
+            if (g_ClientKillAccumulator[client] > 0){
+                Format(sQuery, sizeof(sQuery),
+                    "INSERT INTO player_kills (steam_id, kills) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE kills = kills + %d",
+                    sSteamID, g_ClientKillAccumulator[client], g_ClientKillAccumulator[client]
+                );
+
+                // Pass client as 'data' to identify later
+                SQL_TQuery(g_hDatabase, OnUpdateKillCountFinished, sQuery, client);
+                g_ClientKillAccumulator[client] = 0; 
+            }
+
+            // Update experience
+            if (g_ClientExperienceAccumulator[client] > 0){
+                Format(sQuery, sizeof(sQuery),
+                    "INSERT INTO players (steam_id, experience) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE experience = experience + %d",
+                    sSteamID, g_ClientExperienceAccumulator[client], g_ClientExperienceAccumulator[client]
+                );
+                SQL_TQuery(g_hDatabase, OnUpdateExperienceFinished, sQuery, client);
+                g_ClientExperienceAccumulator[client] = 0;
+            }
+        }
+    }
+}
+
+//----------------------------------------------------------------------------------------------------------------
+
+
+
+// --------------------------------------- Database callback functions. -----------------------------------------
+/**
+ * @brief Callback function invoked after attempting to connect to the database.
+ *
+ * Handles the result of the asynchronous database connection attempt.
+ *
+ * @param owner The parent handle (unused in this context).
+ * @param hndl The handle to the database connection.
+ * @param error An error message if the connection failed.
+ * @param data Extra data passed during the connection attempt (unused here).
+ */
+public void OnDatabaseConnected(Handle owner, Handle hndl, const char[] error, any data)
+{
+    // check the state of the database's handle before it is passed off
+    if (hndl == null || hndl == INVALID_HANDLE){
+        PrintToServer("[AS:RPG] Could not connect to database: %s", error);
+        return;
+    }
+
+    // handle is valid, so connect. cast the handle to a database.
+    g_hDatabase = Database:hndl;
+    PrintToServer("[AS:RPG] Connected to database!");
+
+    CreateTables();
+    InitializeSkills();
+}
+
+/**
+ * @brief Callback function invoked after attempting to create a database table.
+ *
+ * Handles the result of the asynchronous table creation queries.
+ *
+ * @param owner The parent handle (unused in this context).
+ * @param hndl The handle to the SQL query result.
+ * @param error An error message if the table creation failed.
+ * @param data An identifier indicating which table was processed.
+ */
+public void OnCreateTableFinished(Handle owner, Handle hndl, const char[] error, any data)
+{
+    int switcher = data;
+
+    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
+        PrintToServer("[AS:RPG] Failed to create/verify table type %d: %s", data, error);
+        return;
+    }
+
+    switch (switcher)
+    {
+        case TableType_Players:
+            PrintToServer("[AS:RPG] 'players' table is ready.");
+        case TableType_Skills:
+            PrintToServer("[AS:RPG] 'skills' table is ready.");
+        case TableType_PlayerSkills:
+            PrintToServer("[AS:RPG] 'player_skills' table is ready.");
+    }
+}
+
+/**
+ * @brief Callback function invoked after attempting to initialize a skill in the database.
+ *
+ * Handles the result of the asynchronous skill initialization queries.
+ *
+ * @param owner The parent handle (unused in this context).
+ * @param hndl The handle to the SQL query result.
+ * @param error An error message if the skill initialization failed.
+ * @param data An identifier indicating which skill was processed.
+ */
+public void OnInitializeSkillFinished(Handle owner, Handle hndl, const char[] error, any data)
+{
+    int switcher = data;
+    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
+        switch (switcher){
+            case SkillType_DamageBoost:
+                PrintToServer("[AS:RPG] Failed to insert/verify 'Damage Boost' skill: %s", error);
+            case SkillType_HealthRegen:
+                PrintToServer("[AS:RPG] Failed to insert/verify 'Health Regeneration' skill: %s", error);
+        }
+        return;
+    }
+
+    switch (switcher){
+        case SkillType_DamageBoost:
+            PrintToServer("[AS:RPG] 'Damage Boost' skill is ready.");
+        case SkillType_HealthRegen:
+            PrintToServer("[AS:RPG] 'Health Regeneration' skill is ready.");
+    }
+}
+
+/**
+ * @brief Callback function invoked after attempting to retrieve a player's kill count.
+ *
+ * Handles the result of the asynchronous kill count retrieval query and optionally notifies the player.
+ *
+ * @param owner The parent handle (unused in this context).
+ * @param hndl The handle to the SQL query result.
+ * @param error An error message if the retrieval failed.
+ * @param data A handle containing context information.
+ */
+public void OnGetPlayerKillCountFinished(Handle owner, Handle hndl, const char[] error, any data) {
+    // Unpack the context data
+    Handle hContext = view_as<Handle>(data);
+
+    int client = GetArrayCell(hContext, 0);
+    bool bNotify = GetArrayCell(hContext, 1) == 1;
+    char sSteamID[32];
+    GetArrayString(hContext, 2, sSteamID, sizeof(sSteamID));
+
+    CloseHandle(hContext); // Clean up handle after unpacking
+
+    int playerKills = 0;
+    bool hasKills = false;
+
+    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null) {
+        PrintToServer("[AS:RPG] Failed to retrieve kill count for player %s: %s", sSteamID, error);
+    } else {
+        if (SQL_FetchRow(hndl)) {
+            playerKills = SQL_FetchInt(hndl, 0);
+            hasKills = true;
+        }
+    }
+
+    playerKills += g_ClientKillAccumulator[client];
+
+    if (bNotify) {
+        if (hasKills)
+            PrintToChat(client, "Welcome back! Your total kills: %d", playerKills);
+        else
+            PrintToChat(client, "Welcome! Let's start counting your kills!");
+    }
+}
+
+/**
+ * @brief Callback function invoked after attempting to update a client's kill count.
+ *
+ * Handles the result of the asynchronous kill count update query.
+ *
+ * @param owner The parent handle (unused in this context).
+ * @param hndl The handle to the SQL query result.
+ * @param error An error message if the kill count update failed.
+ * @param data The client index associated with this update.
+ */
+public void OnUpdateKillCountFinished(Handle owner, Handle hndl, const char[] error, any data)
+{
+    int client = data;
+    char sSteamID[32];
+    GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
+    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
+        PrintToServer("[AS:RPG] Failed to update kill count for player %s: %s", sSteamID, error);
+    }
+}
+
+/**
+ * @brief Callback function invoked after attempting to update a client's experience.
+ *
+ * Handles the result of the asynchronous experience update query.
+ *
+ * @param owner The parent handle (unused in this context).
+ * @param hndl The handle to the SQL query result.
+ * @param error An error message if the experience update failed.
+ * @param data The client index associated with this update.
+ */
+public void OnUpdateExperienceFinished(Handle owner, Handle hndl, const char[] error, any data)
+{
+    int client = data;
+    char sSteamID[32];
+    GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
+    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
+        PrintToServer("[AS:RPG] Failed to update experience for player %s: %s", sSteamID, error);
+    }
+}
+// -----------------------------------------------------------------------------------------------------------
+
+
+
+
+
+// -------------------------------------- In-game events. -------------------------------------------------------
+/**
+ * @brief Handles the player connect event.
+ *
+ * Retrieves the client index from the event and initializes their data in the server.
+ *
+ * @param event The event data.
+ * @param name The name of the event.
+ * @param dontBroadcast Whether to broadcast the event.
+ */
+public void Event_PlayerConnect(Event event, const char[] name, bool dontBroadcast){
+    int client = GetClientOfUserId(event.GetInt("userid"));
+    if (client > 0){UpdateClientMarineMapping();}
+}
+
+/**
+ * @brief Handles the player disconnect event.
+ *
+ * Updates the database and client-marine mapping when a player disconnects.
+ *
+ * @param event The event data.
+ * @param name The name of the event.
+ * @param dontBroadcast Whether to broadcast the event.
+ */
+public void Event_PlayerDisconnect(Event event, const char[] name, bool dontBroadcast){
+    int client = GetClientOfUserId(event.GetInt("userid"));
+    if (client > 0){    UpdateDatabase();    UpdateClientMarineMapping();    }
+}
 
 /**
  * @brief Called when an entity is created in the game.
@@ -139,89 +483,6 @@ public void OnEntityCreated(int entity, const char[] classname){
 
     // If an asw_marine is created, update the mapping.
     if (StrEqual(classname, "asw_marine")){UpdateClientMarineMapping();}
-}
-
-/**
- * @brief Connects to the database using the predefined configuration.
- *
- * Attempts to establish a connection to the database and initializes necessary tables and skills upon success.
- */
-public void ConnectToDatabase()
-{
-    char error[255];
-
-    g_hDatabase = SQL_Connect(DATABASE_CONFIG, true, error, sizeof(error));
-
-    if (g_hDatabase == null){PrintToServer("[AS:RPG] Could not connect: %s", error);}
-    else{
-        PrintToServer("[AS:RPG] Connected to database!");
-        CreateTables();
-        InitializeSkills(); // Initialize predefined skills
-    }
-}
-
-/**
- * @brief Creates necessary database tables if they do not exist.
- *
- * Creates the `players`, `skills`, and `player_skills` tables in the database.
- */
-public void CreateTables(){
-    char sQuery[1024];
-    Handle hQuery;
-
-    // 1. Create players table
-    Format(sQuery, sizeof(sQuery),
-        "CREATE TABLE IF NOT EXISTS `players` (`steam_id` VARCHAR(32) NOT NULL PRIMARY KEY, `experience` INT NOT NULL DEFAULT 0, `level` INT NOT NULL DEFAULT 1, `skill_points` INT NOT NULL DEFAULT 0, `kills` INT NOT NULL DEFAULT 0);"
-    );
-    hQuery = SQL_Query(g_hDatabase, sQuery);
-    if (hQuery == null){PrintToServer("[AS:RPG] Failed to insert or verify 'players' table!");}
-    else{        PrintToServer("[AS:RPG] 'players' table is ready.");}
-
-    // 2. Create skills table
-    Format(sQuery, sizeof(sQuery),
-        "CREATE TABLE IF NOT EXISTS `skills` ( `skill_id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY, `name` VARCHAR(64) NOT NULL, `description` TEXT, `max_level` INT NOT NULL DEFAULT 1);"
-    );
-    hQuery = SQL_Query(g_hDatabase, sQuery);
-    if (hQuery == null){PrintToServer("[AS:RPG] Failed to insert or verify 'skills' table!");}
-    else{        PrintToServer("[AS:RPG] 'skills' table is ready.");}
-
-    // 3. Create player_skills table
-    Format(sQuery, sizeof(sQuery),
-        "CREATE TABLE IF NOT EXISTS `player_skills` ( `steam_id` VARCHAR(32) NOT NULL, `skill_id` INT NOT NULL, `skill_level` INT NOT NULL DEFAULT 1, PRIMARY KEY (`steam_id`, `skill_id`), FOREIGN KEY (`steam_id`) REFERENCES `players`(`steam_id`) ON DELETE CASCADE, FOREIGN KEY (`skill_id`) REFERENCES `skills`(`skill_id`) ON DELETE CASCADE);"
-    );
-    hQuery = SQL_Query(g_hDatabase, sQuery);
-    if (hQuery == null){PrintToServer("[AS:RPG] Failed to insert or verify 'player_skills' table!");}
-    else{        PrintToServer("[AS:RPG] 'player_skills' table is ready.");}
-
-    delete hQuery;    
-}
-
-/**
- * @brief Handles the player connect event.
- *
- * Retrieves the client index from the event and initializes their data in the server.
- *
- * @param event The event data.
- * @param name The name of the event.
- * @param dontBroadcast Whether to broadcast the event.
- */
-public void Event_PlayerConnect(Event event, const char[] name, bool dontBroadcast){
-    int client = GetClientOfUserId(event.GetInt("userid"));
-    if (client > 0){UpdateClientMarineMapping();}
-}
-
-/**
- * @brief Handles the player disconnect event.
- *
- * Updates the database and client-marine mapping when a player disconnects.
- *
- * @param event The event data.
- * @param name The name of the event.
- * @param dontBroadcast Whether to broadcast the event.
- */
-public void Event_PlayerDisconnect(Event event, const char[] name, bool dontBroadcast){
-    int client = GetClientOfUserId(event.GetInt("userid"));
-    if (client > 0){    UpdateDatabase();    UpdateClientMarineMapping();    }
 }
 
 /**
@@ -271,14 +532,9 @@ public Action OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
     } 
     // if the attacker is a marine, we (will) need to apply damage boosting stuff...
     else if(StrEqual(AttackerClass, "asw_marine")){    
-        // safely try to retrieve the weapon the attacker is using; m_hActiveWeapon is normally right.
-        if (HasEntProp(attacker, Prop_Send, "m_hActiveWeapon")){
-            attackerWeaponEntityID = GetEntPropEnt(attacker, Prop_Send, "m_hActiveWeapon");
-        }
-        if(!IsValidEntity(attackerWeaponEntityID) && HasEntProp(attacker, Prop_Send, "m_hActiveASWWeapon")){
-            PrintToServer("[AS:RPG] [DEBUGGING] Found an m_hActiveASWWeapon!");
-            attackerWeaponEntityID = GetEntPropEnt(attacker, Prop_Send, "m_hActiveASWWeapon");
-        }
+        // safely try to retrieve the weapon the attacker is using; m_hActiveWeapon is normally right. try ASW active weapon if it isnt for some reason
+        attackerWeaponEntityID = SafeGetEntPropEnt(attacker, Prop_Send, "m_hActiveWeapon");
+        if(!IsValidEntity(attackerWeaponEntityID)){ attackerWeaponEntityID = SafeGetEntPropEnt(attacker, Prop_Send, "m_hASWActiveWeapon"); }
 
         // If weapon is valid, get its classname
         if (IsValidEntity(attackerWeaponEntityID)){    GetEntityClassname(attackerWeaponEntityID, WeaponName, sizeof(WeaponName));    }
@@ -311,112 +567,95 @@ public Action OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
 /**
  * @brief Called when an alien is killed.
  *
- * Increments the kill counter for the corresponding client who killed the alien.
+ * Increments the kill counter for the corresponding client who killed the alien. Also, give them one extra bullet.
  *
  * @param event The event data.
  * @param name The name of the event.
  * @param dontBroadcast Whether to broadcast the event.
  */
 public void OnAlienKilled(Event event, const char[] name, bool dontBroadcast){
-    //int killedAlienClassify = event.GetInt("alien");
-    int marineEntityIndex = event.GetInt("marine");
-    //int killingWeaponClassify = event.GetInt("marine");
-
     int client = -1;
-    for (int i = 1; i <= MaxClients; i++)
-    {
-        if (g_ClientToMarine[i] == marineEntityIndex)
-        {
-            client = i;
-            break;
-        }
-    }
+    int marineEntityID = event.GetInt("marine");
+    if (Swarm_IsGameActive()) client = Swarm_GetClientOfMarine(marineEntityID);
+    if (client != -1){
+        int attackerWeaponEntityID = -1;
+        int weaponMaxAmmo = 0;
+        int currentAmmo = 0;
 
-    // if the marine that killed the alien has a matching client, increment that client's kill accumulator
-    if (client != -1){    g_ClientKillAccumulator[client]++;    }
+        attackerWeaponEntityID = SafeGetEntPropEnt(marineEntityID, Prop_Send, "m_hActiveWeapon");
+        if (attackerWeaponEntityID == -1){
+            PrintToServer("[AS:RPG] Client %d's marine %d killed an alien without an active weapon?", client, marineEntityID);
+        } 
+
+        currentAmmo = SafeGetEntProp(marineEntityID, Prop_Send, "m_iAmmo");
+        if (currentAmmo == -1){
+            PrintToServer("[AS:RPG] Client %d's marine %d's weapon had no ammo, or -1.", client, marineEntityID);
+        } 
+
+        weaponMaxAmmo = SafeGetEntProp(attackerWeaponEntityID, Prop_Send, "m_iPrimaryAmmoCount");
+        if (weaponMaxAmmo == -1){
+            PrintToServer("[AS:RPG] Failed to get ammo count or -1 max ammo for client %d's marine %d's weapon entity %d.", client, marineEntityID, attackerWeaponEntityID);
+        } 
+
+        SetEntProp(marineEntityID, Prop_Send, "m_iAmmo", currentAmmo+1)
+
+        g_ClientKillAccumulator[client]++;    
+    }
 }
 
 /**
  * @brief Called when any entity is killed.
  *
- * Logs details about the killed entity for debugging purposes.
+ * Logs details about the killed entity and awards experience if applicable.
  *
  * @param event The event data.
  * @param name The name of the event.
  * @param dontBroadcast Whether to broadcast the event.
  */
-public void OnEntityKilled(Event event, const char[] name, bool dontBroadcast){
-    int entindex_killed = event.GetInt("entindex_killed");
-
-    if (IsValidEntity(entindex_killed))
-    {
-        char className[256];
-        GetEntityClassname(entindex_killed, className, sizeof(className));
-
-        char modelName[256];
-        GetEntPropString(entindex_killed, Prop_Data, "m_ModelName", modelName, sizeof(modelName));
-
-        //PrintToServer("[AS:RPG] Entity killed: index %d, classname '%s', model name '%s'", entindex_killed, className, modelName);
-    }
-}
-
-/**
- * @brief Updates the mapping of clients to their corresponding marine entities.
- *
- * Iterates through all clients and updates the global mapping to associate each client with their marine entity.
- */
-public void UpdateClientMarineMapping(){
-    PrintToServer("[AS:RPG] Updating client-marine mapping!");
-
-    for (int client = 1; client <= MaxClients; client++){
-        if (IsClientInGame(client) && Swarm_IsGameActive()){
-            g_ClientToMarine[client] = Swarm_GetMarine(client)
-            PrintToServer("[AS:RPG] Client %d got marine %d!", client, g_ClientToMarine[client])
-        }
-        else{
-            PrintToServer("[AS:RPG] Client %d not in game!", client)
-            g_ClientToMarine[client] = -1;
-        }
-    }
-}
-
-//  database callers below this line :) 
-//  VERY SLOW, AFAICT sourcemod only supports SYNCHRONOUS so QUERIES ARE LOCKING, CANNOT CALL THESE FRIVOLOUSLY!
-
-
-
-/**
- * @brief Initializes predefined skills in the database.
- *
- * Inserts skills like "Damage Boost" and "Health Regeneration" into the `skills` table.
- */
-public void InitializeSkills()
+public void OnEntityKilled(Event event, const char[] name, bool dontBroadcast)
 {
-    char sQuery[512];
-    Handle hQuery;
+    if (!Swarm_IsGameActive()) return;
 
-    // Example Skill 1: Damage Boost
-    Format(sQuery, sizeof(sQuery),"INSERT INTO `skills` (`name`, `description`, `max_level`) VALUES ('Damage Boost', 'Increases your damage output.', 5) ON DUPLICATE KEY UPDATE `name` = `name`;");
-    hQuery = SQL_Query(g_hDatabase, sQuery);
-    if (hQuery == null){PrintToServer("[AS:RPG] Failed to insert or verify 'Damage Boost' skill!");}
-    else{
-        PrintToServer("[AS:RPG] 'Damage Boost' skill is ready.");
-        delete hQuery;
+    int entindex_killed = event.GetInt("entindex_killed");
+    int entindex_attacker = event.GetInt("entindex_attacker");
+
+    if (!IsValidEntity(entindex_killed) || !IsValidEntity(entindex_attacker)) return;    // Early return if invalid entities
+
+
+    char victimClassname[256];
+    GetEntityClassname(entindex_killed, victimClassname, sizeof(victimClassname));
+
+    char modelName[256];
+    GetEntPropString(entindex_killed, Prop_Data, "m_ModelName", modelName, sizeof(modelName));
+
+    char attackerClassname[256];
+    GetEntityClassname(entindex_attacker, attackerClassname, sizeof(attackerClassname));
+
+    if (StrEqual(attackerClassname, "asw_marine")){    
+        // Example: Determine experience based on victim class
+        int experienceGained = GetExperienceForAlienClass(victimClassname);
+        int client = Swarm_GetClientOfMarine(entindex_attacker);
+        if (client != -1){
+            g_ClientExperienceAccumulator[client] += experienceGained;
+            g_ClientKillAccumulator[client]++;
+            PrintToServer("[AS:RPG] Client %d killed %s and earned %d XP.", client, victimClassname, experienceGained);
+        }
+        // give other actively playing clients 25% the experience. You don't miss out (much!) when killing things as a group! 
+        for(int otherClients = 0; otherClients < MaxClients; otherClients++){
+            if(otherClients == client || g_ClientToMarine[otherClients] == -1) continue;
+            g_ClientExperienceAccumulator[otherClients] += RoundToNearest( float(experienceGained) * ExperienceSharingRate);
+        }
     }
 
-    // Example Skill 2: Health Regeneration
-    Format(sQuery, sizeof(sQuery),"INSERT INTO `skills` (`name`, `description`, `max_level`) VALUES ('Health Regeneration', 'Regenerates your health over time.', 3) ON DUPLICATE KEY UPDATE `name` = `name`;");
-    hQuery = SQL_Query(g_hDatabase, sQuery);
-    if (hQuery == null){PrintToServer("[AS:RPG] Failed to insert or verify 'Health Regeneration' skill!");}
-    else{
-        PrintToServer("[AS:RPG] 'Health Regeneration' skill is ready.");
-        delete hQuery;
-    }
-
-    // Add more skills as needed following the same pattern
+    // Debug output
+    PrintToServer("[AS:RPG] Entity killed: index %d, classname '%s', model name '%s'", entindex_killed, victimClassname, modelName);
 }
+//----------------------------------------------------------------------------------------------------------------
 
 
+
+// ---------------------------------------------- Timers --------------------------------------------------------
+// (only database update loop rn, but maybe active skill cooldowns one day?)
 /**
  * @brief Timer callback to periodically update the database with accumulated kills.
  *
@@ -429,51 +668,11 @@ public Action Timer_UpdateDatabase(Handle timer){
     UpdateDatabase();
     return Plugin_Continue;
 }
-
-/**
- * @brief Updates the database with accumulated kills for each client.
- *
- * Iterates through all clients, updates their kill counts and experience in the database, and resets their accumulated kills.
- */
-public void UpdateDatabase(){
-    PrintToServer("[AS:RPG] Updating database!");
-    char sSteamID[32];
-    char sQuery[512];
-
-    for (int client = 1; client <= MaxClients; client++)
-    {
-        if (g_ClientKillAccumulator[client] > 0 && IsClientInGame(client))
-        {
-            GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
-
-            PrintToServer("[AS:RPG] Adding %d to client %d's total.", g_ClientKillAccumulator[client], client);
-
-            // Use accumulated kills to update the database
-            Format(sQuery, sizeof(sQuery),
-                "INSERT INTO player_kills (steam_id, kills) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE kills = kills + %d",
-                sSteamID, g_ClientKillAccumulator[client], g_ClientKillAccumulator[client]);
-
-            Handle hQuery = SQL_Query(g_hDatabase, sQuery);
-
-            if (hQuery != null){    delete hQuery;  }
-            else{   PrintToServer("[AS:RPG] Failed to update kill count for player %s", sSteamID);   }
-
-            Format(sQuery, sizeof(sQuery),
-                "INSERT INTO players (steam_id, experience) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE experience = experience + %d",
-                sSteamID, g_ClientKillAccumulator[client], g_ClientKillAccumulator[client]);
-
-            hQuery = SQL_Query(g_hDatabase, sQuery);
-
-            if (hQuery != null){    delete hQuery;  }
-            else{   PrintToServer("[AS:RPG] Failed to update experience for player %s", sSteamID);   }
-
-            // Reset the accumulated kills for the client
-            g_ClientKillAccumulator[client] = 0;
-        }
-    }
-}
+// --------------------------------------------------------------------------------------------------------------
 
 
+
+// ------------------------------------ Console commands. ------------------------------------------------------
 /**
  * @brief Console command handler to display a player's kill count.
  *
@@ -484,59 +683,13 @@ public void UpdateDatabase(){
  * @return Action Indicates whether the plugin has handled the command.
  */
 public Action Command_KillCount(int client, int args){
-    if (client <= 0 || !IsClientInGame(client)){return Plugin_Handled;}
-
-    // Get player's Steam ID
+    if (client <= 0 || !IsClientInGame(client)) { return Plugin_Handled; }
+    PrintToServer("Client %d attempting to get kill count!", client);
     char sSteamID[32];
     GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
-    // check if they have any kills
-    int playerKills = GetPlayerKillCount(sSteamID, client, false) + g_ClientKillAccumulator[client];
-    bool hasKills = (playerKills > 0);
-
-    if (hasKills){PrintToChat(client, "Your total kills: %d", playerKills);}
-    else{PrintToChat(client, "You have no recorded kills yet.");}
+    GetPlayerKillCount(sSteamID, client, true);
     return Plugin_Handled;
 }
-
-/**
- * @brief Retrieves and optionally displays a player's kill count.
- *
- * Fetches the kill count from the database and sends a welcome message to the player if required.
- *
- * @param sSteamID The Steam ID of the player.
- * @param client The client index.
- * @param bNotify Whether to send a notification to the player.
- */
-public int GetPlayerKillCount(const char[] sSteamID, int client, bool bNotify){
-    char sQuery[256];
-
-    Format(sQuery, sizeof(sQuery), "SELECT kills FROM player_kills WHERE steam_id = '%s'", sSteamID);
-    Handle hQuery = SQL_Query(g_hDatabase, sQuery);
-
-    int playerKills = 0;
-    bool hasKills = false;
-
-    if (hQuery == null){
-        PrintToServer("[AS:RPG] Failed to retrieve kill count for player %s", sSteamID);
-    }
-    else{
-        if (SQL_FetchRow(hQuery)){
-            playerKills = SQL_FetchInt(hQuery, 0);
-            hasKills = true;
-        }
-        delete hQuery;
-    }
-
-    if (bNotify){
-        if (hasKills){PrintToChat(client, "Welcome back! Your total kills: %d", playerKills);}
-        else{PrintToChat(client, "Welcome! Let's start counting your kills!");}
-    }
-    return playerKills;
-}
-
-
-
-// ------------------------------------------- Generic 'extra' commands here. Relatively fast ones. -------------------------------------------------------
 
 /**
  * @brief Console command handler to spawn entities.
@@ -568,6 +721,31 @@ public Action Command_SpawnEntity(int client, int args) {
     return Plugin_Handled;
 }
 
+/**
+ * @brief Console command handler to adjust the game's difficulty.
+ *
+ * Allows the server to modify many game settings related to difficulty using the `sm_difficultyscale` command.
+ *
+ * @param client The client index who issued the command.
+ * @param args The number of arguments passed with the command.
+ * @return Action Indicates whether the plugin has handled the command.
+ */
+public Action Command_DifficultyScale(int args){
+	if (args < 1) { 
+		PrintToServer("Usage: sm_difficultyscale <0-n> (low values will be boring and high values will cause server instability - have fun!)"); 
+		return Plugin_Handled;
+	}
+
+	float difficulty = 1.0;
+	GetCmdArgFloatEx(1, difficulty);
+    AdjustDifficultyConVars(difficulty)
+    return Plugin_Handled;
+}
+// ----------------------------------------------------------------------------------------------------------------
+
+
+
+// -------------------------------------------------- Utility / helper functions. ------------------------------------
 /**
  * @brief Spawns an entity by its classname at a specified position with optional model and range.
  *
@@ -605,29 +783,6 @@ public void SpawnEntityByName(const char[] classname, float position[3], const f
 
     // Optional: Print a message to confirm the entity was spawned
     if (bNotify) PrintToServer("[AS:RPG] Spawned entity of type %s at position %.2f, %.2f, %.2f", classname, position[0], position[1], position[2]);
-}
-
-
-
-/**
- * @brief Console command handler to adjust the game's difficulty.
- *
- * Allows the server to modify many game settings related to difficulty using the `sm_difficultyscale` command.
- *
- * @param client The client index who issued the command.
- * @param args The number of arguments passed with the command.
- * @return Action Indicates whether the plugin has handled the command.
- */
-public Action Command_DifficultyScale(int args){
-	if (args < 1) { 
-		PrintToServer("Usage: sm_difficultyscale <0-n> (low values will be boring and high values will cause server instability - have fun!)"); 
-		return Plugin_Handled;
-	}
-
-	float difficulty = 1.0;
-	GetCmdArgFloatEx(1, difficulty);
-    AdjustDifficultyConVars(difficulty)
-    return Plugin_Handled;
 }
 
 /**
@@ -813,3 +968,77 @@ void StripAndChangeServerConVarInt(String:command[], int value) {
     SetCommandFlags(command, flags);
 	LogAction(0, -1, "[NOTICE]: (%L) set %s to %d", 0, command, value);	
 }
+
+/**
+ * @brief Determines the experience points awarded based on the classname of the alien killed.
+ *
+ * @param victimClassname The classname string of the alien.
+ * @return int The experience points awarded for the kill.
+ */
+int GetExperienceForAlienClass(const char[] victimClassname){
+    if (StrEqual(victimClassname, "asw_drone")){            return 10;    }
+    else if (StrEqual(victimClassname, "asw_boomer")){      return 15;    }
+    else if (StrEqual(victimClassname, "asw_zombine")){     return 20;    }
+    // Add more conditions as needed for different alien classes
+    else{
+        PrintToServer("[AS:RPG] GetExperienceForAlienClass() encountered Alien class %s without defined experience! Defaulting to 10.", victimClassname);
+        return 10; // Default experience for unknown classes
+    }
+}
+
+/**
+ * @brief Updates the mapping of clients to their corresponding marine entities.
+ *
+ * Iterates through all clients and updates the global mapping to associate each client with their marine entity.
+ */
+public void UpdateClientMarineMapping(){
+    PrintToServer("[AS:RPG] Updating client-marine mapping!");
+
+    for (int client = 1; client <= MaxClients; client++){
+        if (IsClientInGame(client) && Swarm_IsGameActive()){
+            g_ClientToMarine[client] = Swarm_GetMarine(client)
+            PrintToServer("[AS:RPG] Client %d got marine %d!", client, g_ClientToMarine[client])
+        }
+        else{
+            PrintToServer("[AS:RPG] Client %d not in game!", client)
+            g_ClientToMarine[client] = -1;
+        }
+    }
+}
+
+
+
+/**
+ * @brief Safely retrieves an entity's property of entity type.
+ *
+ * Checks that the entity is valid and has the property before trying to get it.
+ * 
+ * @param entity The entity ID to retrieve the property from.
+ * @param type The PropType to attempt to access.
+ * @param property The string represting the property name.
+ * @return Entity index, or -1 if invalid entity / nonexistent property.
+ */
+public int SafeGetEntPropEnt(int entity, PropType type, char[] property){
+    if (IsValidEntity(entity) && HasEntProp(entity, type, property)){
+        return GetEntPropEnt(entity, type, property);
+    }
+    else return -1;
+}
+
+/**
+ * @brief Safely retrieves an entitie's property of generic type.
+ *
+ * Checks that the entity is valid and has the property before trying to get it.
+ *
+ * @param entity The entity ID to retrieve the property from.
+ * @param type The PropType to attempt to access.
+ * @param property The string represting the property name.
+ * @return Property value, or -1 if invalid entity / nonexistent property.
+ */
+public int SafeGetEntProp(int entity, PropType type, char[] property){
+    if (IsValidEntity(entity) && HasEntProp(entity, type, property)){
+        return GetEntProp(entity, type, property);
+    }
+    else return -1;
+}
+// ----------------------------------------------------------------------------------------------------------------
