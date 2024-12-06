@@ -57,7 +57,7 @@ stock void InitializeSkills(){
  * @param bNotify Whether to send a notification to the player upon retrieval.
  * @return int Returns 0 as the result is handled asynchronously.
  */
-stock int GetPlayerKillCount(const char[] sSteamID, int client, bool bNotify) { 
+stock void GetPlayerKillCount(const char[] sSteamID, int client, bool bNotify) { 
     // Create a handle to store the context data
     Handle hContext = CreateArray(1); 
     PushArrayCell(hContext, view_as<int>(client)); // Pack client
@@ -69,8 +69,6 @@ stock int GetPlayerKillCount(const char[] sSteamID, int client, bool bNotify) {
     PrintToServer("Client %d initialized database query for their kill count!", client);
 
     SQL_TQuery(g_hDatabase, OnGetPlayerKillCountFinished, sQuery, hContext);
-
-    return 0;
 }
 
 /**
