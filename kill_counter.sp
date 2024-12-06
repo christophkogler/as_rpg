@@ -26,7 +26,7 @@ public Plugin myinfo = {
     name = "Alien Swarm: Reactive drop PluGin, A.K.A, AS:RPG",
     author = "Christoph Kogler",
     description = "Counts your kills. :(",
-    version = "1.0",
+    version = "1.0.3",
     url = "https://github.com/christophkogler/as_rpg"
 };
 
@@ -39,10 +39,27 @@ const float ExperienceSharingRate = 0.25; // 0 - inf. greather than 1 would be k
 
 Database g_hDatabase = null; // Global database handle
 
+// load all skills from database into a global data structure on plugin load
+// more efficient to take up an extra 10mb of ram than hit a SQL server anytime somebody looks at the skill menu.
+// same reason for the PlayerData array.
+
+/**
+ * @brief Struct to hold skill data.
+ *
+ * Contains experience points, level, skill points, and kill count for each player.
+ */
+enum struct SkillData {
+    char skillName[64];
+    char skillDescription[256];
+    int skillLevel;
+}
+// how to make an array of appropriate size???
+// how to define the size of a GLOBAL array from OnPluginStart???
+
+
 int g_ClientToMarine[MAXPLAYERS + 1];
 int g_ClientKillAccumulator[MAXPLAYERS + 1];
 int g_ClientExperienceAccumulator[MAXPLAYERS + 1];
-PlayerData g_PlayerData[MAXPLAYERS + 1];
 
 /**
  * @brief Struct to hold player-specific data.
@@ -54,8 +71,9 @@ enum struct PlayerData {
     int level;
     int skill_points;
     int kills;
-    //Dictionary skills; // To hold skill_id and skill_level
+    // how to hold skills of player, and their levels? basically a set of keyvals?
 }
+PlayerData g_PlayerData[MAXPLAYERS + 1];
 
 /**
  * @brief Enumeration for identifying different table types during creation.
@@ -120,6 +138,10 @@ public void OnPluginStart()
     RegAdminCmd("sm_spawnentity", Command_SpawnEntity, ADMFLAG_GENERIC);
     RegServerCmd("sm_difficultyscale", Command_DifficultyScale);
 
+    RegServerCmd("sm_addskill", Command_AddSkill, "Adds a new skill to the database.");
+    RegServerCmd("sm_listskills", Command_ListSkills, "Lists all skills in the database.");
+    RegServerCmd("sm_deleteskill", Command_DeleteSkill, "Deletes a skill by name from the database.");
+
     CreateTimer(30.0, Timer_UpdateDatabase, _, TIMER_REPEAT);
 }
 
@@ -178,12 +200,14 @@ public void CreateTables(){
  * Inserts skills like "Damage Boost" and "Health Regeneration" into the `skills` table.
  */
 public void InitializeSkills(){
-    SQL_TQuery(g_hDatabase, OnInitializeSkillFinished, 
-        "INSERT INTO `skills` (`name`, `description`, `max_level`) VALUES ('Damage Boost', 'Increases your damage output.', 5) ON DUPLICATE KEY UPDATE `name` = `name`;", 
+    SQL_TQuery(g_hDatabase, 
+        OnInitializeSkillFinished, 
+        "INSERT IGNORE INTO `skills` (`name`, `description`, `max_level`) VALUES ('Damage Boost', 'Increases your damage output.', 5);", 
         SkillType_DamageBoost);
 
-    SQL_TQuery(g_hDatabase, OnInitializeSkillFinished, 
-        "INSERT INTO `skills` (`name`, `description`, `max_level`) VALUES ('Health Regeneration', 'Regenerates your health over time.', 3) ON DUPLICATE KEY UPDATE `name` = `name`;", 
+    SQL_TQuery(g_hDatabase, 
+        OnInitializeSkillFinished, 
+        "INSERT IGNORE INTO `skills` (`name`, `description`, `max_level`) VALUES ('Health Regeneration', 'Regenerates your health over time.', 3);", 
         SkillType_HealthRegen);
 }
 
@@ -250,6 +274,30 @@ public void UpdateDatabase(){
     }
 }
 
+
+public void AddSkillToDatabase(char[] name, char[] description, int max_level){
+    PrintToServer("[AS:RPG] Adding a skill to the database.");
+    PrintToServer("[AS:RPG] %s, maximum level %d.\n%s", name, max_level, description);
+    char sQuery[512];
+    Format(sQuery, sizeof(sQuery), "INSERT INTO skills (name, description, max_level) VALUES ('%s', '%s', %d);",
+           name, description, max_level);
+    SQL_TQuery(g_hDatabase, OnCreateSkillFinished, sQuery);
+}
+
+public void DeleteSkillFromDatabase(char[] name){
+    PrintToServer("[AS:RPG] Deleting the skill %s from the database.", name);
+    char sQuery[512];
+    Format(sQuery, sizeof(sQuery), "DELETE FROM skills WHERE name = '%s';", name);
+    SQL_TQuery(g_hDatabase, OnDeleteSkillFinished, sQuery);
+}
+
+public void ListSkillsInDatabase(){
+    PrintToServer("[AS:RPG] List all skills.");
+    char sQuery[512];
+    Format(sQuery, sizeof(sQuery), "SELECT * FROM skills;");
+    SQL_TQuery(g_hDatabase, OnListSkillsFinished, sQuery);
+}
+
 //----------------------------------------------------------------------------------------------------------------
 
 
@@ -265,8 +313,7 @@ public void UpdateDatabase(){
  * @param error An error message if the connection failed.
  * @param data Extra data passed during the connection attempt (unused here).
  */
-public void OnDatabaseConnected(Handle owner, Handle hndl, const char[] error, any data)
-{
+public void OnDatabaseConnected(Handle owner, Handle hndl, const char[] error, any data){
     // check the state of the database's handle before it is passed off
     if (hndl == null || hndl == INVALID_HANDLE){
         PrintToServer("[AS:RPG] Could not connect to database: %s", error);
@@ -291,8 +338,7 @@ public void OnDatabaseConnected(Handle owner, Handle hndl, const char[] error, a
  * @param error An error message if the table creation failed.
  * @param data An identifier indicating which table was processed.
  */
-public void OnCreateTableFinished(Handle owner, Handle hndl, const char[] error, any data)
-{
+public void OnCreateTableFinished(Handle owner, Handle hndl, const char[] error, any data){
     int switcher = data;
 
     if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
@@ -321,8 +367,7 @@ public void OnCreateTableFinished(Handle owner, Handle hndl, const char[] error,
  * @param error An error message if the skill initialization failed.
  * @param data An identifier indicating which skill was processed.
  */
-public void OnInitializeSkillFinished(Handle owner, Handle hndl, const char[] error, any data)
-{
+public void OnInitializeSkillFinished(Handle owner, Handle hndl, const char[] error, any data){
     int switcher = data;
     if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
         switch (switcher){
@@ -352,7 +397,7 @@ public void OnInitializeSkillFinished(Handle owner, Handle hndl, const char[] er
  * @param error An error message if the retrieval failed.
  * @param data A handle containing context information.
  */
-public void OnGetPlayerKillCountFinished(Handle owner, Handle hndl, const char[] error, any data) {
+public void OnGetPlayerKillCountFinished(Handle owner, Handle hndl, const char[] error, any data){
     // Unpack the context data
     Handle hContext = view_as<Handle>(data);
 
@@ -395,8 +440,7 @@ public void OnGetPlayerKillCountFinished(Handle owner, Handle hndl, const char[]
  * @param error An error message if the kill count update failed.
  * @param data The client index associated with this update.
  */
-public void OnUpdateKillCountFinished(Handle owner, Handle hndl, const char[] error, any data)
-{
+public void OnUpdateKillCountFinished(Handle owner, Handle hndl, const char[] error, any data){
     int client = data;
     char sSteamID[32];
     GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
@@ -415,14 +459,53 @@ public void OnUpdateKillCountFinished(Handle owner, Handle hndl, const char[] er
  * @param error An error message if the experience update failed.
  * @param data The client index associated with this update.
  */
-public void OnUpdateExperienceFinished(Handle owner, Handle hndl, const char[] error, any data)
-{
+public void OnUpdateExperienceFinished(Handle owner, Handle hndl, const char[] error, any data){
     int client = data;
     char sSteamID[32];
     GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
     if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
         PrintToServer("[AS:RPG] Failed to update experience for player %s: %s", sSteamID, error);
     }
+}
+
+public void OnCreateSkillFinished(Handle owner, Handle hndl, const char[] error, any data){
+    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
+        PrintToServer("[AS:RPG] Failed to create skill! Error: %s", error);
+    }
+}
+
+public void OnDeleteSkillFinished(Handle owner, Handle hndl, const char[] error, any data){
+    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
+        PrintToServer("[AS:RPG] Failed to delete skill! Error: %s", error);
+    }
+}
+
+public void OnListSkillsFinished(Handle owner, Handle hndl, const char[] error, any data) {
+    // Check if there was an error or if the handle is invalid
+    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null) {    PrintToServer("[AS:RPG] Failed to get skills! Error: %s", error);    return;    }
+
+    // Begin processing the result set
+    PrintToServer("[AS:RPG] Skills list retrieved successfully:");
+    int rowCount = 0;
+
+    // Iterate through each row in the result set
+    while (SQL_FetchRow(hndl)) {
+        char skillName[64];
+        char skillDescription[256];
+        int skillLevel;
+
+        // Retrieve the skill name and level from the current row
+        SQL_FetchString(hndl, 0, skillName, sizeof(skillName));
+        skillLevel = SQL_FetchInt(hndl, 1);
+
+        // Print the skill information to the server console
+        PrintToServer("[AS:RPG] Skill #%d: %s - max level %d - %s", ++rowCount, skillName, skillLevel, skillDescription);
+
+        // refresh global stored skills
+    }
+
+    // Check if no rows were retrieved
+    if (rowCount == 0) {    PrintToServer("[AS:RPG] No skills found in the database.");    }
 }
 // -----------------------------------------------------------------------------------------------------------
 
@@ -742,6 +825,46 @@ public Action Command_DifficultyScale(int args){
     AdjustDifficultyConVars(difficulty)
     return Plugin_Handled;
 }
+
+// Command: sm_addskill <name> <description> <max_level>
+public Action Command_AddSkill(int args){
+    if (args != 3){
+        PrintToServer("[AS:RPG] Usage: sm_addskill \"<name>\" \"<description>\" <max_level>");
+        return Plugin_Handled;
+    }
+
+    char name[64], description[256];
+    GetCmdArg(1, name, sizeof(name));
+    GetCmdArg(2, description, sizeof(description));
+    int max_level = GetCmdArgInt(3);
+
+    AddSkillToDatabase(name, description, max_level);
+
+    return Plugin_Handled;
+}
+
+public Action Command_DeleteSkill(int args){
+    if (args != 1){
+        PrintToServer("[AS:RPG] Usage: sm_deleteskill \"<name>\"");
+        return Plugin_Handled;
+    }
+
+    char name[64];
+    GetCmdArg(1, name, sizeof(name));
+
+    DeleteSkillFromDatabase(name);
+
+    return Plugin_Handled;
+}
+
+public Action Command_ListSkills(int args){
+    if (args != 0){
+        PrintToServer("[AS:RPG] Usage: sm_listskills");
+        return Plugin_Handled;
+    }
+    ListSkillsInDatabase();
+    return Plugin_Handled;
+}
 // ----------------------------------------------------------------------------------------------------------------
 
 
@@ -1007,8 +1130,6 @@ public void UpdateClientMarineMapping(){
     }
 }
 
-
-
 /**
  * @brief Safely retrieves an entity's property of entity type.
  *
@@ -1052,158 +1173,435 @@ public int SafeGetEntProp(int entity, PropType type, char[] property){
 
 
 
-// ----------------------- The experimental junkyard. --------------------------------------------------
 
-#define CHOICE1 "#choice1"
-#define CHOICE2 "#choice2"
-#define CHOICE3 "#choicehello"
+// -------------------------------------- Menus ----------------------------------------------------
+
+#define MAIN_MENU_VIEW_SKILLS "#view_skills"
+#define BACKCHOICE "#back"
+#define PURCHASECHOICE "#purchase"
+#define REFUNDCHOICE "#refund"
+
+/**
+ * @brief Displays the main menu to the client.
+ *
+ * @param client The client index.
+ */
+public void ShowMainMenu(int client) {
+    // Create a menu with a callback and actions
+    Menu menu = CreateMenuEx(GetMenuStyleHandle(MenuStyle_Radio), MenuHandler1, MENU_ACTIONS_ALL);
+    
+    // Set the title of the menu
+    menu.SetTitle("%T", "Main Menu Title", LANG_SERVER);
+    
+    // Add menu items
+    menu.AddItem(MAIN_MENU_VIEW_SKILLS, "View Skills");
+    menu.AddItem(BACKCHOICE, "Exit");
+    
+    // Enable the exit button
+    menu.ExitButton = true;
+    
+    // Display the menu to the client indefinitely
+    menu.Display(client, MENU_TIME_FOREVER);
+}
+
+/**
+ * @brief Command to open the main menu.
+ *
+ * @param client The client index.
+ * @param args The number of arguments.
+ * @return Action Indicates the command was handled.
+ */
+public Action Menu_Test1(int client, int args) {
+    ShowMainMenu(client);
+    return Plugin_Handled;
+}
+
+/**
+ * @brief Initiates fetching skills and displaying the skills menu.
+ *
+ * @param client The client index.
+ */
+public void FetchSkillsAndShowMenu(int client) {
+    // Ensure client is valid
+    if (client <= 0 || !IsClientInGame(client)) return;
+
+    // Prepare SQL query to fetch all skills
+    char query[256];
+    Format(query, sizeof(query), "SELECT skill_id, name, description, max_level FROM skills");
+
+    // Use client index as data for callback
+    SQL_TQuery(g_hDatabase, OnFetchSkillsFinished, query, client);
+}
 
 
-public int MenuHandler1(Menu menu, MenuAction action, int param1, int param2){
-    switch(action)  {
+/**
+ * @brief Callback after fetching skills.
+ *
+ * Builds and displays the skills menu.
+ *
+ * @param owner The parent handle (unused).
+ * @param hndl The handle to the SQL query result.
+ * @param error An error message if the query failed.
+ * @param data The client index.
+ */
+public void OnFetchSkillsFinished(Handle owner, Handle hndl, const char[] error, any data) {
 
-        /*
-            param1: not set
-            param2: not set
-            return: 0 (or don't return)
-            It is fired when the menu is displayed to one or more users using DisplayMenu, DisplayMenuAtItem, VoteMenu, or VoteMenuToAll.
-        */
+    int client = data;
+
+    // Handle errors
+    if (hndl == INVALID_HANDLE || error[0] != '\0') {
+        PrintToServer("[AS:RPG] Failed to fetch skills: %s", error);
+        return;
+    }
+
+    // Create skills menu
+    Menu skillMenu = CreateMenuEx(GetMenuStyleHandle(MenuStyle_Radio), SkillMenuHandler, MENU_ACTIONS_ALL);
+    
+    // Set the menu style to Radio
+    skillMenu.Style
+    
+    skillMenu.SetTitle("Available Skills");
+
+    // Add skills to the menu
+    bool skillsFound = false; // Track if any skills are added
+    while (SQL_FetchRow(hndl)) {
+        skillsFound = true;
+
+        int skillID = SQL_FetchInt(hndl, 0);
+        char skillName[64], skillDescription[128];
+        SQL_FetchString(hndl, 1, skillName, sizeof(skillName));
+        SQL_FetchString(hndl, 2, skillDescription, sizeof(skillDescription));
+        //int maxLevel = SQL_FetchInt(hndl, 3);
+
+        // Store skill ID as menu item info
+        char info[32];
+        Format(info, sizeof(info), "%d", skillID);
+        skillMenu.AddItem(info, skillName, ITEMDRAW_DEFAULT);
+    }
+
+    // If no skills found, inform the player
+    if (!skillsFound) {
+        skillMenu.AddItem(BACKCHOICE, "No skills available");
+    }
+
+    // Add back option
+    skillMenu.AddItem(BACKCHOICE, "Back to Main Menu");
+    skillMenu.ExitButton = true;
+
+    // Display menu
+    skillMenu.Display(client, MENU_TIME_FOREVER);
+}
+
+/**
+ * @brief Initiates fetching the player's current skill level and displaying the skill detail submenu.
+ *
+ * @param client The client index.
+ * @param skillID The selected skill's ID.
+ */
+public void FetchPlayerSkillLevel(int client, int skillID) {
+    // Get player's Steam ID
+    char sSteamID[32];
+    GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
+
+    // Prepare SQL query to fetch the player's current skill level
+    char query[256];
+    Format(query, sizeof(query), 
+        "SELECT ps.skill_level, s.name, s.description, s.max_level FROM player_skills ps JOIN skills s ON ps.skill_id = s.skill_id WHERE ps.steam_id = '%s' AND ps.skill_id = %d", 
+        sSteamID, skillID
+    );
+
+    // Create a context handle to pass client and skillID
+    Handle hContext = CreateArray(2);
+    PushArrayCell(hContext, client); // Client index
+    PushArrayCell(hContext, skillID); // Skill ID
+
+    // Execute the query with a callback
+    SQL_TQuery(g_hDatabase, OnFetchPlayerSkillLevel, query, hContext);
+}
+
+/**
+ * @brief Callback after fetching the player's current skill level.
+ *
+ * Builds and displays the skill detail submenu.
+ *
+ * @param owner The parent handle (unused).
+ * @param hndl The handle to the SQL query result.
+ * @param error An error message if the query failed.
+ * @param data The context handle containing client index and skillID.
+ */
+public void OnFetchPlayerSkillLevel(Handle owner, Handle hndl, const char[] error, any data) {
+    // Unpack context data
+    Handle hContext = view_as<Handle>(data);
+    int client = GetArrayCell(hContext, 0);
+    int skillID = GetArrayCell(hContext, 1);
+    CloseHandle(hContext); // Clean up
+
+    // Handle errors
+    if (hndl == INVALID_HANDLE || error[0] != '\0') {
+        PrintToServer("[AS:RPG] Failed to fetch player skill level: %s", error);
+        return;
+    }
+
+    // Initialize variables
+    int currentLevel = 0;
+    char skillName[64], skillDescription[128];
+    int maxLevel = 1;
+
+    // Check if the player has the skill
+    if (SQL_FetchRow(hndl)) {
+        currentLevel = SQL_FetchInt(hndl, 0);
+        SQL_FetchString(hndl, 1, skillName, sizeof(skillName));
+        SQL_FetchString(hndl, 2, skillDescription, sizeof(skillDescription));
+        maxLevel = SQL_FetchInt(hndl, 3);
+    } else {
+        // Player does not have the skill yet
+        // Fetch skill info from skills table
+        char skillInfoQuery[256];
+        Format(skillInfoQuery, sizeof(skillInfoQuery), 
+            "SELECT name, description, max_level FROM skills WHERE skill_id = %d", 
+            skillID
+        );
+
+        // Create a new context with client and skillID
+        Handle hNewContext = CreateArray(2);
+        PushArrayCell(hNewContext, client);
+        PushArrayCell(hNewContext, skillID);
+
+        // Execute the query to get skill info
+        SQL_TQuery(g_hDatabase, OnFetchSkillInfoForNewSkill, skillInfoQuery, hNewContext);
+        return;
+    }
+
+    // Create and display the skill detail submenu
+    BuildAndShowSkillDetailMenu(client, skillID, skillName, skillDescription, maxLevel, currentLevel);
+}
+
+/**
+ * @brief Callback to fetch skill info for a new skill (player does not have it yet).
+ *
+ * @param owner The parent handle (unused).
+ * @param hndl The handle to the SQL query result.
+ * @param error An error message if the query failed.
+ * @param data The context handle containing client index and skillID.
+ */
+public void OnFetchSkillInfoForNewSkill(Handle owner, Handle hndl, const char[] error, any data) {
+    // Unpack context data
+    Handle hContext = view_as<Handle>(data);
+    int client = GetArrayCell(hContext, 0);
+    int skillID = GetArrayCell(hContext, 1);
+    CloseHandle(hContext); // Clean up
+
+    // Handle errors
+    if (hndl == INVALID_HANDLE || error[0] != '\0') {
+        PrintToServer("[AS:RPG] Failed to fetch skill info: %s", error);
+        return;
+    }
+
+    // Initialize variables
+    char skillName[64], skillDescription[128];
+    int maxLevel = 1;
+
+    // Fetch skill info
+    if (SQL_FetchRow(hndl)) {
+        SQL_FetchString(hndl, 0, skillName, sizeof(skillName));
+        SQL_FetchString(hndl, 1, skillDescription, sizeof(skillDescription));
+        maxLevel = SQL_FetchInt(hndl, 2);
+    } else {
+        PrintToServer("[AS:RPG] Skill ID %d not found.", skillID);
+        return;
+    }
+
+    // Player does not have the skill yet, set current level to 0
+    int currentLevel = 0;
+
+    // Create and display the skill detail submenu
+    BuildAndShowSkillDetailMenu(client, skillID, skillName, skillDescription, maxLevel, currentLevel);
+}
+
+/**
+ * @brief Builds and displays the skill detail submenu.
+ *
+ * @param client The client index.
+ * @param skillID The skill's ID.
+ * @param skillName The skill's name.
+ * @param skillDescription The skill's description.
+ * @param maxLevel The skill's maximum level.
+ * @param currentLevel The player's current level of the skill.
+ */
+public void BuildAndShowSkillDetailMenu(int client, int skillID, const char[] skillName, const char[] skillDescription, int maxLevel, int currentLevel) {
+    // Create skill detail menu
+    Menu skillDetailMenu = CreateMenuEx(GetMenuStyleHandle(MenuStyle_Radio), SkillDetailMenuHandler, MENU_ACTIONS_ALL);
+    
+    // Construct the menu title with skill name, description, and level on separate lines
+    char menuTitle[512];
+    Format(menuTitle, sizeof(menuTitle), "Skill Details\nName: %s\nDescription: %s\nLevel: %d/%d", 
+           skillName, skillDescription, currentLevel, maxLevel);
+    SetMenuTitle(skillDetailMenu, menuTitle);
+
+    // Purchase and Refund buttons
+    AddMenuItem(skillDetailMenu, "#purchase", "Purchase");
+    AddMenuItem(skillDetailMenu, "#refund", "Refund");
+
+    // Back button
+    AddMenuItem(skillDetailMenu, BACKCHOICE, "Back to Skills");
+
+    // Enable Exit Button if necessary
+    skillDetailMenu.ExitButton = true;
+
+    // Display menu
+    skillDetailMenu.Display(client, MENU_TIME_FOREVER);
+}
+
+// ------------------------ Purchase and Refund Handlers -------------------------------
+
+/**
+ * @brief Handles the purchase of a skill.
+ *
+ * @param client The client index.
+ * @param menu The current menu handle.
+ */
+public void HandlePurchaseSkill(int client, Menu menu) {
+    // TODO: Implement purchase logic
+    // Example steps:
+    // 1. Determine the skillID from the menu context or item info.
+    // 2. Check if the player has enough experience to purchase.
+    // 3. Deduct experience and increase skill level in the database.
+    // 4. Notify the player of the successful purchase.
+
+    PrintToServer("[AS:RPG] Client %d attempted to purchase a skill.", client);
+    PrintToChat(client, "Purchase functionality is not yet implemented.");
+}
+
+/**
+ * @brief Handles the refund of a skill.
+ *
+ * @param client The client index.
+ * @param menu The current menu handle.
+ */
+public void HandleRefundSkill(int client, Menu menu) {
+    // TODO: Implement refund logic
+    // Example steps:
+    // 1. Determine the skillID from the menu context or item info.
+    // 2. Check if the player can refund the skill.
+    // 3. Add experience and decrease skill level in the database.
+    // 4. Notify the player of the successful refund.
+
+    PrintToServer("[AS:RPG] Client %d attempted to refund a skill.", client);
+    PrintToChat(client, "Refund functionality is not yet implemented.");
+}
+
+
+// ------------------------------- Menu Handlers --------------------------------------------
+/**
+ * @brief Main menu handler.
+ *
+ * Handles selections in the main menu.
+ */
+public int MenuHandler1(Menu menu, MenuAction action, int param1, int param2) {
+    switch (action) {
         case MenuAction_Start:{      
-                PrintToServer("Displaying menu");   
+            PrintToServer("Displaying Main Menu");
         }
- 
-        /*
-            param1: client index
-            param2: MenuPanel Handle
-            return: 0 (or don't return)
-            MenuAction_Display is called once for each user a menu is displayed to. param1 is the client, param2 is the MenuPanel handle.
-            SetPanelTitle is used to change the menu's title based on the language of the user viewing it using the Translations system.
-        */
+
         case MenuAction_Display:{
             char buffer[255];
-            Format(buffer, sizeof(buffer), "%T", "Vote Nextmap", param1);
+            Format(buffer, sizeof(buffer), "%T", "Main Menu Title", param1);
         
             Panel panel = view_as<Panel>(param2);
             panel.SetTitle(buffer);
-            //panel.DrawText();
         }
-    
-        /*
-            param1: client index
-            param2: item number for use with GetMenuItem
-            return: 0 (or don't return)
-            MenuAction_Select is called when a user selects a non-control item on the menu (something added using AddMenuItem). 
-            param1 is the client, param2 is the menu position of the item the client selected.
 
-            Using the item position to check which item was selected is a bad idea, as item position is brittle and will break things if AddMenuItem or InsertMenuItem is used. 
-            It is recommended that you instead use the Menu item's info string, as done in the code above.
-
-            GetMenuItem is used here to fetch the info string.
-        */
         case MenuAction_Select:{
             char info[32];
             menu.GetItem(param2, info, sizeof(info));
-            if (StrEqual(info, CHOICE3)){     PrintToServer("Client %d somehow selected %s despite it being disabled", param1, info);    }
-            else{                             PrintToServer("Client %d selected %s", param1, info);    }
-        }
-    
-        /*
-            param1: client index
-            param2: item number for use with GetMenuItem
-            return: new ITEMDRAW properties or style from GetMenuItem. Since 0 is ITEMDRAW_DEFAULT, returning 0 clears all styles for this item.
-            MenuAction_DrawItem is called once for each item on the menu for each user. You can manipulate its draw style here. param1 is the client, param2 is the menu position.
-
-            Using the item position to check which item was selected is a bad idea, as item position is brittle and will break things if AddMenuItem or InsertMenuItem is used. 
-            It is recommended that you instead use the Menu item's info string, as done in the code above.
-            GetMenuItem is used here to fetch the info string and menu style.
-
-            You should return the style you want the menu item to have. In our example, if client 1 is viewing the menu, we disable CHOICE3.
-
-            the return value is a bitfield, so to apply multiple styles, you do something like this:
-                return ITEMDRAW_NOTEXT | ITEMDRAW_SPACER;
-
-            Failing to return the current item's style if you don't change the style is a programmer error.
-        */
-        case MenuAction_DrawItem:{
-            int style;
-            char info[32];
-            menu.GetItem(param2, info, sizeof(info), style);
-            //if (StrEqual(info, CHOICE3)){     return ITEMDRAW_DISABLED;   }
-            //else{                             return style;               }
-            return style;
-        }
-    
-        /* 
-            param1: client index
-            param2: item number for use with GetMenuItem
-            return: return value from RedrawMenuItem or 0 for no change
-            MenuAction_DisplayItem is called once for each item on the menu for each user. You can manipulate its text here. param1 is the client, param2 is the menu position.
-
-            This callback is intended for use with the Translation system.
-            Using the item position to check which item was selected is a bad idea, as item position is brittle and will break things if AddMenuItem or InsertMenuItem is used. 
-            It is recommended that you instead use the Menu item's info string, as done in the code above.
-            GetMenuItem is used here to fetch the info string.
-            Once we have the info string, we compare our item to it and apply the appropriate translation string.
-
-            If we change an item, we have to call RedrawMenuItem and return the value it returns. If we do not change an item, we must return 0.
-        */
-        case MenuAction_DisplayItem:{
-            char info[32];
-            menu.GetItem(param2, info, sizeof(info));
-        
-            char display[64];
-            
-            if (StrEqual(info, CHOICE3)){
-                Format(display, sizeof(display), "%T", "Choice 3", param1);
-                return RedrawMenuItem(display);
+            if (StrEqual(info, MAIN_MENU_VIEW_SKILLS)) {
+                PrintToServer("Client %d selected View Skills", param1);
+                FetchSkillsAndShowMenu(param1); // Open the skills menu
+            } else if (StrEqual(info, BACKCHOICE)) {
+                PrintToServer("Client %d selected Exit", param1);
+                // Optionally handle exit
+            } else {
+                PrintToServer("Client %d selected unknown option: %s", param1, info);
             }
-            else return 0;
         }
 
-        /*
-            param1: client index
-            param2: MenuCancel reason
-            return: 0 (or don't return)
-            MenuAction_Cancel is called whenever a user closes a menu or it is closed for them for another reason. param1 is the client, param2 is the close reason.
-
-            The close reasons you can receive are:
-                MenuCancel_Disconnected - The client got disconnected from the server.
-                MenuCancel_Interrupted - Another menu opened, automatically closing our menu.
-                MenuCancel_Exit - The client selected Exit. Not called if SetMenuExitBack was set to true. Not called if SetMenuExit was set to false.
-                MenuCancel_NoDisplay - Our menu never displayed to the client for whatever reason.
-                MenuCancel_Timeout - The menu timed out. Not called if the menu time was MENU_TIME_FOREVER.
-                MenuCancel_ExitBack - The client selected Back. Only called if SetMenuExitBack has been called and set to true before the menu was sent. Not called if SetMenuExit was set to false.
-         */
-        case MenuAction_Cancel:{    PrintToServer("Client %d's menu was cancelled for reason %d", param1, param2);    }
-    
-        /*
-            param1: MenuEnd reason
-            param2: If param1 is MenuEnd_Cancelled, the MenuCancel reason
-            return: 0 (or don't return)
-            MenuAction_End is called when all clients have closed a menu or vote. For menus that are not going to be redisplayed, it is required that you call CloseHandle on the menu here.
-
-            The parameters are rarely used in MenuAction_End. param1 is the menu end reason. param2 depends on param1.
-            The end reasons you can receive for normal menus are:
-                MenuEnd_Selected - The menu closed because an item was selected (MenuAction_Select was fired)
-                MenuEnd_Cancelled - The menu was cancelled (MenuAction_Cancel was fired), cancel reason is in param2; cancel reason can be any of the ones listed in MenuAction_Cancel except MenuCancel_Exit or MenuCancel_ExitBack
-                MenuEnd_Exit - The menu was exited via the Exit item (MenuAction_Cancel was fired with param2 set to MenuCancel_Exit)
-                MenuEnd_ExitBack - The menu was exited via the ExitBack item (MenuAction_Cancel was fired with param 2 set to MenuCancel_ExitBack)
-                Note: You do not have the client index during this callback, so it's far too late to do anything useful with this information.
-        */
-        case MenuAction_End:{    delete menu;    }
+        case MenuAction_End:{
+            CloseHandle(menu);
+        }
     }
     
     return 0;
 }
- 
-public Action Menu_Test1(int client, int args){
-  Menu menu = new Menu(MenuHandler1, MENU_ACTIONS_ALL);
-  menu.SetTitle("%T", "Menu Title", LANG_SERVER);
-  menu.AddItem(CHOICE1, "Choice 1");
-  menu.AddItem(CHOICE2, "Choice 2");
-  menu.AddItem(CHOICE3, "Choice Hello");
-  menu.ExitButton = false;
-  menu.Display(client, MENU_TIME_FOREVER);
- 
-  return Plugin_Handled;
+
+/**
+ * @brief Skills menu handler.
+ *
+ * Handles selections in the skills menu.
+ */
+public int SkillMenuHandler(Menu menu, MenuAction action, int param1, int param2) {
+    switch (action) {
+        case MenuAction_Start:{
+            PrintToServer("Displaying Skills Menu for Client %d", param1);
+        }
+
+        case MenuAction_Display:{
+            // Optionally customize display
+        }
+
+        case MenuAction_Select: {
+            char info[32];
+            menu.GetItem(param2, info, sizeof(info));
+            if (StrEqual(info, BACKCHOICE)) {
+                // Go back to the main menu
+                ShowMainMenu(param1);
+            } else {
+                // Handle skill selection
+                int skillID = StringToInt(info);
+                PrintToServer("Client %d selected skill ID: %d", param1, skillID);
+                FetchPlayerSkillLevel(param1, skillID); // Fetch and show skill details
+            }
+        }
+
+        case MenuAction_End: {
+            CloseHandle(menu);
+        }
+    }
+    return 0;
+}
+
+/**
+ * @brief Skill detail menu handler.
+ *
+ * Handles selections in the skill detail submenu.
+ */
+public int SkillDetailMenuHandler(Menu menu, MenuAction action, int param1, int param2) {
+    switch (action) {
+        case MenuAction_DrawItem:{
+            int style;
+            char info[32];
+            menu.GetItem(param2, info, sizeof(info), style);
+            return style;    
+        }
+        case MenuAction_Select: {
+            char info[32];
+            menu.GetItem(param2, info, sizeof(info));
+
+            if (StrEqual(info, PURCHASECHOICE)) {
+                // Handle purchase action
+                HandlePurchaseSkill(param1, menu);
+            } else if (StrEqual(info, REFUNDCHOICE)) {
+                // Handle refund action
+                HandleRefundSkill(param1, menu);
+            } else if (StrEqual(info, BACKCHOICE)) {
+                // Go back to the skills menu
+                FetchSkillsAndShowMenu(param1);
+            } else {
+                PrintToServer("[AS:RPG] Client %d selected unknown option: %s", param1, info);
+            }
+        }
+        case MenuAction_End: {
+            CloseHandle(menu);
+        }
+    }
+    return 0;
 }
