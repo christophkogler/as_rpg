@@ -19,7 +19,7 @@ Currently, it:
     - Adds Server commands for creating, listing, and removing skills.
 
 ### Setup:
-<br>
+
 1. Install the Alien Swarm: Reactive Drop Dedicated Server through the Steam Library. In the case of AS:RD, the dedicated server installed via the Steam Library is in the same folder as the game: `...\steamapps\common\Alien Swarm Reactive Drop\srcds`.
    -  The server files are `srcds.exe` and `srcds_console.exe`.
 2. This can be found by right clicking on the server in the library, hovering your mouse over *Manage >* and selecting *Browse Local Files*.
