@@ -93,6 +93,9 @@ public void OnPluginStart()
 {
     PrintToServer("[AS:RPG] Initializing Kill Counter!");
 
+    LoadTranslations("menu_test.phrases");
+    RegConsoleCmd("menu_test1", Menu_Test1);
+
     // Initialize arrays
     for (int i = 0; i <= MaxClients; i++)
     {
@@ -612,15 +615,13 @@ public void OnAlienKilled(Event event, const char[] name, bool dontBroadcast){
  * @param name The name of the event.
  * @param dontBroadcast Whether to broadcast the event.
  */
-public void OnEntityKilled(Event event, const char[] name, bool dontBroadcast)
-{
+public void OnEntityKilled(Event event, const char[] name, bool dontBroadcast){
     if (!Swarm_IsGameActive()) return;
 
     int entindex_killed = event.GetInt("entindex_killed");
     int entindex_attacker = event.GetInt("entindex_attacker");
 
     if (!IsValidEntity(entindex_killed) || !IsValidEntity(entindex_attacker)) return;    // Early return if invalid entities
-
 
     char victimClassname[256];
     GetEntityClassname(entindex_killed, victimClassname, sizeof(victimClassname));
@@ -642,7 +643,7 @@ public void OnEntityKilled(Event event, const char[] name, bool dontBroadcast)
         }
         // give other actively playing clients 25% the experience. You don't miss out (much!) when killing things as a group! 
         for(int otherClients = 0; otherClients < MaxClients; otherClients++){
-            if(otherClients == client || g_ClientToMarine[otherClients] == -1) continue;
+            if(otherClients == client || g_ClientToMarine[otherClients] == -1 || !IsClientConnected(otherClients)) continue;
             g_ClientExperienceAccumulator[otherClients] += RoundToNearest( float(experienceGained) * ExperienceSharingRate);
         }
     }
@@ -1042,3 +1043,167 @@ public int SafeGetEntProp(int entity, PropType type, char[] property){
     else return -1;
 }
 // ----------------------------------------------------------------------------------------------------------------
+
+
+
+
+
+
+
+
+
+// ----------------------- The experimental junkyard. --------------------------------------------------
+
+#define CHOICE1 "#choice1"
+#define CHOICE2 "#choice2"
+#define CHOICE3 "#choicehello"
+
+
+public int MenuHandler1(Menu menu, MenuAction action, int param1, int param2){
+    switch(action)  {
+
+        /*
+            param1: not set
+            param2: not set
+            return: 0 (or don't return)
+            It is fired when the menu is displayed to one or more users using DisplayMenu, DisplayMenuAtItem, VoteMenu, or VoteMenuToAll.
+        */
+        case MenuAction_Start:{      
+                PrintToServer("Displaying menu");   
+        }
+ 
+        /*
+            param1: client index
+            param2: MenuPanel Handle
+            return: 0 (or don't return)
+            MenuAction_Display is called once for each user a menu is displayed to. param1 is the client, param2 is the MenuPanel handle.
+            SetPanelTitle is used to change the menu's title based on the language of the user viewing it using the Translations system.
+        */
+        case MenuAction_Display:{
+            char buffer[255];
+            Format(buffer, sizeof(buffer), "%T", "Vote Nextmap", param1);
+        
+            Panel panel = view_as<Panel>(param2);
+            panel.SetTitle(buffer);
+            //panel.DrawText();
+        }
+    
+        /*
+            param1: client index
+            param2: item number for use with GetMenuItem
+            return: 0 (or don't return)
+            MenuAction_Select is called when a user selects a non-control item on the menu (something added using AddMenuItem). 
+            param1 is the client, param2 is the menu position of the item the client selected.
+
+            Using the item position to check which item was selected is a bad idea, as item position is brittle and will break things if AddMenuItem or InsertMenuItem is used. 
+            It is recommended that you instead use the Menu item's info string, as done in the code above.
+
+            GetMenuItem is used here to fetch the info string.
+        */
+        case MenuAction_Select:{
+            char info[32];
+            menu.GetItem(param2, info, sizeof(info));
+            if (StrEqual(info, CHOICE3)){     PrintToServer("Client %d somehow selected %s despite it being disabled", param1, info);    }
+            else{                             PrintToServer("Client %d selected %s", param1, info);    }
+        }
+    
+        /*
+            param1: client index
+            param2: item number for use with GetMenuItem
+            return: new ITEMDRAW properties or style from GetMenuItem. Since 0 is ITEMDRAW_DEFAULT, returning 0 clears all styles for this item.
+            MenuAction_DrawItem is called once for each item on the menu for each user. You can manipulate its draw style here. param1 is the client, param2 is the menu position.
+
+            Using the item position to check which item was selected is a bad idea, as item position is brittle and will break things if AddMenuItem or InsertMenuItem is used. 
+            It is recommended that you instead use the Menu item's info string, as done in the code above.
+            GetMenuItem is used here to fetch the info string and menu style.
+
+            You should return the style you want the menu item to have. In our example, if client 1 is viewing the menu, we disable CHOICE3.
+
+            the return value is a bitfield, so to apply multiple styles, you do something like this:
+                return ITEMDRAW_NOTEXT | ITEMDRAW_SPACER;
+
+            Failing to return the current item's style if you don't change the style is a programmer error.
+        */
+        case MenuAction_DrawItem:{
+            int style;
+            char info[32];
+            menu.GetItem(param2, info, sizeof(info), style);
+            //if (StrEqual(info, CHOICE3)){     return ITEMDRAW_DISABLED;   }
+            //else{                             return style;               }
+            return style;
+        }
+    
+        /* 
+            param1: client index
+            param2: item number for use with GetMenuItem
+            return: return value from RedrawMenuItem or 0 for no change
+            MenuAction_DisplayItem is called once for each item on the menu for each user. You can manipulate its text here. param1 is the client, param2 is the menu position.
+
+            This callback is intended for use with the Translation system.
+            Using the item position to check which item was selected is a bad idea, as item position is brittle and will break things if AddMenuItem or InsertMenuItem is used. 
+            It is recommended that you instead use the Menu item's info string, as done in the code above.
+            GetMenuItem is used here to fetch the info string.
+            Once we have the info string, we compare our item to it and apply the appropriate translation string.
+
+            If we change an item, we have to call RedrawMenuItem and return the value it returns. If we do not change an item, we must return 0.
+        */
+        case MenuAction_DisplayItem:{
+            char info[32];
+            menu.GetItem(param2, info, sizeof(info));
+        
+            char display[64];
+            
+            if (StrEqual(info, CHOICE3)){
+                Format(display, sizeof(display), "%T", "Choice 3", param1);
+                return RedrawMenuItem(display);
+            }
+            else return 0;
+        }
+
+        /*
+            param1: client index
+            param2: MenuCancel reason
+            return: 0 (or don't return)
+            MenuAction_Cancel is called whenever a user closes a menu or it is closed for them for another reason. param1 is the client, param2 is the close reason.
+
+            The close reasons you can receive are:
+                MenuCancel_Disconnected - The client got disconnected from the server.
+                MenuCancel_Interrupted - Another menu opened, automatically closing our menu.
+                MenuCancel_Exit - The client selected Exit. Not called if SetMenuExitBack was set to true. Not called if SetMenuExit was set to false.
+                MenuCancel_NoDisplay - Our menu never displayed to the client for whatever reason.
+                MenuCancel_Timeout - The menu timed out. Not called if the menu time was MENU_TIME_FOREVER.
+                MenuCancel_ExitBack - The client selected Back. Only called if SetMenuExitBack has been called and set to true before the menu was sent. Not called if SetMenuExit was set to false.
+         */
+        case MenuAction_Cancel:{    PrintToServer("Client %d's menu was cancelled for reason %d", param1, param2);    }
+    
+        /*
+            param1: MenuEnd reason
+            param2: If param1 is MenuEnd_Cancelled, the MenuCancel reason
+            return: 0 (or don't return)
+            MenuAction_End is called when all clients have closed a menu or vote. For menus that are not going to be redisplayed, it is required that you call CloseHandle on the menu here.
+
+            The parameters are rarely used in MenuAction_End. param1 is the menu end reason. param2 depends on param1.
+            The end reasons you can receive for normal menus are:
+                MenuEnd_Selected - The menu closed because an item was selected (MenuAction_Select was fired)
+                MenuEnd_Cancelled - The menu was cancelled (MenuAction_Cancel was fired), cancel reason is in param2; cancel reason can be any of the ones listed in MenuAction_Cancel except MenuCancel_Exit or MenuCancel_ExitBack
+                MenuEnd_Exit - The menu was exited via the Exit item (MenuAction_Cancel was fired with param2 set to MenuCancel_Exit)
+                MenuEnd_ExitBack - The menu was exited via the ExitBack item (MenuAction_Cancel was fired with param 2 set to MenuCancel_ExitBack)
+                Note: You do not have the client index during this callback, so it's far too late to do anything useful with this information.
+        */
+        case MenuAction_End:{    delete menu;    }
+    }
+    
+    return 0;
+}
+ 
+public Action Menu_Test1(int client, int args){
+  Menu menu = new Menu(MenuHandler1, MENU_ACTIONS_ALL);
+  menu.SetTitle("%T", "Menu Title", LANG_SERVER);
+  menu.AddItem(CHOICE1, "Choice 1");
+  menu.AddItem(CHOICE2, "Choice 2");
+  menu.AddItem(CHOICE3, "Choice Hello");
+  menu.ExitButton = false;
+  menu.Display(client, MENU_TIME_FOREVER);
+ 
+  return Plugin_Handled;
+}
