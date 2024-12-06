@@ -12,7 +12,7 @@
  *
  * @param client The client index.
  */
-public void ShowMainMenu(int client) {
+stock void ShowMainMenu(int client) {
     // Create a menu with a callback and actions
     Menu menu = CreateMenuEx(GetMenuStyleHandle(MenuStyle_Radio), MenuHandler1, MENU_ACTIONS_ALL);
     
@@ -37,7 +37,7 @@ public void ShowMainMenu(int client) {
  * @param args The number of arguments.
  * @return Action Indicates the command was handled.
  */
-public Action Menu_Test1(int client, int args) {
+stock Action Menu_Test1(int client, int args) {
     ShowMainMenu(client);
     return Plugin_Handled;
 }
@@ -47,7 +47,7 @@ public Action Menu_Test1(int client, int args) {
  *
  * @param client The client index.
  */
-public void FetchSkillsAndShowMenu(int client) {
+stock void FetchSkillsAndShowMenu(int client) {
     // Ensure client is valid
     if (client <= 0 || !IsClientInGame(client)) return;
 
@@ -70,7 +70,7 @@ public void FetchSkillsAndShowMenu(int client) {
  * @param error An error message if the query failed.
  * @param data The client index.
  */
-public void OnFetchSkillsFinished(Handle owner, Handle hndl, const char[] error, any data) {
+stock void OnFetchSkillsFinished(Handle owner, Handle hndl, const char[] error, any data) {
 
     int client = data;
 
@@ -124,7 +124,7 @@ public void OnFetchSkillsFinished(Handle owner, Handle hndl, const char[] error,
  * @param client The client index.
  * @param skillID The selected skill's ID.
  */
-public void FetchPlayerSkillLevel(int client, int skillID) {
+stock void FetchPlayerSkillLevel(int client, int skillID) {
     // Get player's Steam ID
     char sSteamID[32];
     GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
@@ -155,7 +155,7 @@ public void FetchPlayerSkillLevel(int client, int skillID) {
  * @param error An error message if the query failed.
  * @param data The context handle containing client index and skillID.
  */
-public void OnFetchPlayerSkillLevel(Handle owner, Handle hndl, const char[] error, any data) {
+stock void OnFetchPlayerSkillLevel(Handle owner, Handle hndl, const char[] error, any data) {
     // Unpack context data
     Handle hContext = view_as<Handle>(data);
     int client = GetArrayCell(hContext, 0);
@@ -210,7 +210,7 @@ public void OnFetchPlayerSkillLevel(Handle owner, Handle hndl, const char[] erro
  * @param error An error message if the query failed.
  * @param data The context handle containing client index and skillID.
  */
-public void OnFetchSkillInfoForNewSkill(Handle owner, Handle hndl, const char[] error, any data) {
+stock void OnFetchSkillInfoForNewSkill(Handle owner, Handle hndl, const char[] error, any data) {
     // Unpack context data
     Handle hContext = view_as<Handle>(data);
     int client = GetArrayCell(hContext, 0);
@@ -254,7 +254,7 @@ public void OnFetchSkillInfoForNewSkill(Handle owner, Handle hndl, const char[] 
  * @param maxLevel The skill's maximum level.
  * @param currentLevel The player's current level of the skill.
  */
-public void BuildAndShowSkillDetailMenu(int client, int skillID, const char[] skillName, const char[] skillDescription, int maxLevel, int currentLevel) {
+stock void BuildAndShowSkillDetailMenu(int client, int skillID, const char[] skillName, const char[] skillDescription, int maxLevel, int currentLevel) {
     // Create skill detail menu
     Menu skillDetailMenu = CreateMenuEx(GetMenuStyleHandle(MenuStyle_Radio), SkillDetailMenuHandler, MENU_ACTIONS_ALL);
     
@@ -286,7 +286,7 @@ public void BuildAndShowSkillDetailMenu(int client, int skillID, const char[] sk
  * @param client The client index.
  * @param menu The current menu handle.
  */
-public void HandlePurchaseSkill(int client, Menu menu) {
+stock void HandlePurchaseSkill(int client, Menu menu) {
     // TODO: Implement purchase logic
     // Example steps:
     // 1. Determine the skillID from the menu context or item info.
@@ -304,7 +304,7 @@ public void HandlePurchaseSkill(int client, Menu menu) {
  * @param client The client index.
  * @param menu The current menu handle.
  */
-public void HandleRefundSkill(int client, Menu menu) {
+stock void HandleRefundSkill(int client, Menu menu) {
     // TODO: Implement refund logic
     // Example steps:
     // 1. Determine the skillID from the menu context or item info.
@@ -323,7 +323,7 @@ public void HandleRefundSkill(int client, Menu menu) {
  *
  * Handles selections in the main menu.
  */
-public int MenuHandler1(Menu menu, MenuAction action, int param1, int param2) {
+stock int MenuHandler1(Menu menu, MenuAction action, int param1, int param2) {
     switch (action) {
         case MenuAction_Start:{      
             PrintToServer("Displaying Main Menu");
@@ -364,7 +364,7 @@ public int MenuHandler1(Menu menu, MenuAction action, int param1, int param2) {
  *
  * Handles selections in the skills menu.
  */
-public int SkillMenuHandler(Menu menu, MenuAction action, int param1, int param2) {
+stock int SkillMenuHandler(Menu menu, MenuAction action, int param1, int param2) {
     switch (action) {
         case MenuAction_Start:{
             PrintToServer("Displaying Skills Menu for Client %d", param1);
@@ -400,7 +400,7 @@ public int SkillMenuHandler(Menu menu, MenuAction action, int param1, int param2
  *
  * Handles selections in the skill detail submenu.
  */
-public int SkillDetailMenuHandler(Menu menu, MenuAction action, int param1, int param2) {
+stock int SkillDetailMenuHandler(Menu menu, MenuAction action, int param1, int param2) {
     switch (action) {
         case MenuAction_DrawItem:{
             int style;

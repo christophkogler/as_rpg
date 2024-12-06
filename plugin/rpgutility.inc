@@ -17,7 +17,7 @@
  * @param range The random spawn range to offset the position.
  * @param bNotify Whether to notify the server about the spawned entity.
  */
-public void SpawnEntityByName(const char[] classname, float position[3], const float angles[3], const char[] model, float range, bool bNotify) {
+stock void SpawnEntityByName(const char[] classname, float position[3], const float angles[3], const char[] model, float range, bool bNotify) {
     // Create the entity by classname
     int entity = CreateEntityByName(classname);
     if (entity == -1) {
@@ -250,7 +250,7 @@ int GetExperienceForAlienClass(const char[] victimClassname){
  *
  * Iterates through all clients and updates the global mapping to associate each client with their marine entity.
  */
-public void UpdateClientMarineMapping(){
+stock void UpdateClientMarineMapping(){
     PrintToServer("[AS:RPG] Updating client-marine mapping!");
 
     for (int client = 1; client <= MaxClients; client++){
@@ -275,7 +275,7 @@ public void UpdateClientMarineMapping(){
  * @param property The string represting the property name.
  * @return Entity index, or -1 if invalid entity / nonexistent property.
  */
-public int SafeGetEntPropEnt(int entity, PropType type, char[] property){
+stock int SafeGetEntPropEnt(int entity, PropType type, char[] property){
     if (IsValidEntity(entity) && HasEntProp(entity, type, property)){
         return GetEntPropEnt(entity, type, property);
     }
@@ -292,7 +292,7 @@ public int SafeGetEntPropEnt(int entity, PropType type, char[] property){
  * @param property The string represting the property name.
  * @return Property value, or -1 if invalid entity / nonexistent property.
  */
-public int SafeGetEntProp(int entity, PropType type, char[] property){
+stock int SafeGetEntProp(int entity, PropType type, char[] property){
     if (IsValidEntity(entity) && HasEntProp(entity, type, property)){
         return GetEntProp(entity, type, property);
     }

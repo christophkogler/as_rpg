@@ -9,7 +9,7 @@
 /**
  * @brief Initiates an asynchronous connection to the database.
  */
-public void ConnectToDatabase(){
+stock void ConnectToDatabase(){
     SQL_TConnect(OnDatabaseConnected, DATABASE_CONFIG, 0);
 }
 
@@ -18,7 +18,7 @@ public void ConnectToDatabase(){
  *
  * Executes asynchronous SQL queries to ensure the required tables are present in the database.
  */
-public void CreateTables(){
+stock void CreateTables(){
     SQL_TQuery(g_hDatabase, OnCreateTableFinished,
         "CREATE TABLE IF NOT EXISTS `players` (`steam_id` VARCHAR(32) NOT NULL PRIMARY KEY, `experience` INT NOT NULL DEFAULT 0, `level` INT NOT NULL DEFAULT 1, `skill_points` INT NOT NULL DEFAULT 0, `kills` INT NOT NULL DEFAULT 0);", 
         TableType_Players);
@@ -37,7 +37,7 @@ public void CreateTables(){
  *
  * Inserts skills like "Damage Boost" and "Health Regeneration" into the `skills` table.
  */
-public void InitializeSkills(){
+stock void InitializeSkills(){
     SQL_TQuery(g_hDatabase, 
         OnInitializeSkillFinished, 
         "INSERT IGNORE INTO `skills` (`name`, `description`, `max_level`) VALUES ('Damage Boost', 'Increases your damage output.', 5);", 
@@ -57,7 +57,7 @@ public void InitializeSkills(){
  * @param bNotify Whether to send a notification to the player upon retrieval.
  * @return int Returns 0 as the result is handled asynchronously.
  */
-public int GetPlayerKillCount(const char[] sSteamID, int client, bool bNotify) { 
+stock int GetPlayerKillCount(const char[] sSteamID, int client, bool bNotify) { 
     // Create a handle to store the context data
     Handle hContext = CreateArray(1); 
     PushArrayCell(hContext, view_as<int>(client)); // Pack client
@@ -78,7 +78,7 @@ public int GetPlayerKillCount(const char[] sSteamID, int client, bool bNotify) {
  *
  * Iterates through all clients, updates their kill counts and experience in the database, and resets their accumulated counters.
  */
-public void UpdateDatabase(){
+stock void UpdateDatabase(){
     PrintToServer("[AS:RPG] Updating database with accumulated kills and experience.");
     char sSteamID[32];
     char sQuery[512];
@@ -113,7 +113,7 @@ public void UpdateDatabase(){
 }
 
 
-public void AddSkillToDatabase(char[] name, char[] description, int max_level){
+stock void AddSkillToDatabase(char[] name, char[] description, int max_level){
     PrintToServer("[AS:RPG] Adding a skill to the database.");
     PrintToServer("[AS:RPG] %s, maximum level %d.\n%s", name, max_level, description);
     char sQuery[512];
@@ -122,14 +122,14 @@ public void AddSkillToDatabase(char[] name, char[] description, int max_level){
     SQL_TQuery(g_hDatabase, OnCreateSkillFinished, sQuery);
 }
 
-public void DeleteSkillFromDatabase(char[] name){
+stock void DeleteSkillFromDatabase(char[] name){
     PrintToServer("[AS:RPG] Deleting the skill %s from the database.", name);
     char sQuery[512];
     Format(sQuery, sizeof(sQuery), "DELETE FROM skills WHERE name = '%s';", name);
     SQL_TQuery(g_hDatabase, OnDeleteSkillFinished, sQuery);
 }
 
-public void ListSkillsInDatabase(){
+stock void ListSkillsInDatabase(){
     PrintToServer("[AS:RPG] List all skills.");
     char sQuery[512];
     Format(sQuery, sizeof(sQuery), "SELECT * FROM skills;");
@@ -151,7 +151,7 @@ public void ListSkillsInDatabase(){
  * @param error An error message if the connection failed.
  * @param data Extra data passed during the connection attempt (unused here).
  */
-public void OnDatabaseConnected(Handle owner, Handle hndl, const char[] error, any data){
+stock void OnDatabaseConnected(Handle owner, Handle hndl, const char[] error, any data){
     // check the state of the database's handle before it is passed off
     if (hndl == null || hndl == INVALID_HANDLE){
         PrintToServer("[AS:RPG] Could not connect to database: %s", error);
@@ -176,7 +176,7 @@ public void OnDatabaseConnected(Handle owner, Handle hndl, const char[] error, a
  * @param error An error message if the table creation failed.
  * @param data An identifier indicating which table was processed.
  */
-public void OnCreateTableFinished(Handle owner, Handle hndl, const char[] error, any data){
+stock void OnCreateTableFinished(Handle owner, Handle hndl, const char[] error, any data){
     int switcher = data;
 
     if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
@@ -205,7 +205,7 @@ public void OnCreateTableFinished(Handle owner, Handle hndl, const char[] error,
  * @param error An error message if the skill initialization failed.
  * @param data An identifier indicating which skill was processed.
  */
-public void OnInitializeSkillFinished(Handle owner, Handle hndl, const char[] error, any data){
+stock void OnInitializeSkillFinished(Handle owner, Handle hndl, const char[] error, any data){
     int switcher = data;
     if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
         switch (switcher){
@@ -235,7 +235,7 @@ public void OnInitializeSkillFinished(Handle owner, Handle hndl, const char[] er
  * @param error An error message if the retrieval failed.
  * @param data A handle containing context information.
  */
-public void OnGetPlayerKillCountFinished(Handle owner, Handle hndl, const char[] error, any data){
+stock void OnGetPlayerKillCountFinished(Handle owner, Handle hndl, const char[] error, any data){
     // Unpack the context data
     Handle hContext = view_as<Handle>(data);
 
@@ -278,7 +278,7 @@ public void OnGetPlayerKillCountFinished(Handle owner, Handle hndl, const char[]
  * @param error An error message if the kill count update failed.
  * @param data The client index associated with this update.
  */
-public void OnUpdateKillCountFinished(Handle owner, Handle hndl, const char[] error, any data){
+stock void OnUpdateKillCountFinished(Handle owner, Handle hndl, const char[] error, any data){
     int client = data;
     char sSteamID[32];
     GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
@@ -297,7 +297,7 @@ public void OnUpdateKillCountFinished(Handle owner, Handle hndl, const char[] er
  * @param error An error message if the experience update failed.
  * @param data The client index associated with this update.
  */
-public void OnUpdateExperienceFinished(Handle owner, Handle hndl, const char[] error, any data){
+stock void OnUpdateExperienceFinished(Handle owner, Handle hndl, const char[] error, any data){
     int client = data;
     char sSteamID[32];
     GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
@@ -306,19 +306,19 @@ public void OnUpdateExperienceFinished(Handle owner, Handle hndl, const char[] e
     }
 }
 
-public void OnCreateSkillFinished(Handle owner, Handle hndl, const char[] error, any data){
+stock void OnCreateSkillFinished(Handle owner, Handle hndl, const char[] error, any data){
     if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
         PrintToServer("[AS:RPG] Failed to create skill! Error: %s", error);
     }
 }
 
-public void OnDeleteSkillFinished(Handle owner, Handle hndl, const char[] error, any data){
+stock void OnDeleteSkillFinished(Handle owner, Handle hndl, const char[] error, any data){
     if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
         PrintToServer("[AS:RPG] Failed to delete skill! Error: %s", error);
     }
 }
 
-public void OnListSkillsFinished(Handle owner, Handle hndl, const char[] error, any data) {
+stock void OnListSkillsFinished(Handle owner, Handle hndl, const char[] error, any data) {
     // Check if there was an error or if the handle is invalid
     if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null) {    PrintToServer("[AS:RPG] Failed to get skills! Error: %s", error);    return;    }
 
