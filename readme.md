@@ -8,8 +8,9 @@ I try to only commit functional code, but I can't catch any (or probably even mo
 <br>
 <br>
 Currently, it:
- - Persistently tracks each player's stats (kills, skills, experience)
- - Skeleton of a few dummy skills that do nothing.
+ - Uses an SQL database to hold players, player_skills, and skills tables.
+ - Persistently tracks each player's stats (kills, experience).
+ - Automatically implements a few dummy skills that do nothing.
  - Doubles the autogun and prototype rifle's damage.
  - Adds multiple commands!
     - Adds a command to let players see their current kill count.
