@@ -11,6 +11,7 @@ Currently, it:
  - Uses an SQL database to hold players, player_skills, and skills tables.
  - Persistently tracks each player's stats (kills, experience).
  - Automatically implements a few dummy skills that do nothing.
+ - Implements a menu system that doesn't do anything (besides display the list of available skills).
  - Doubles the autogun and prototype rifle's damage.
  - Adds multiple commands!
     - Adds a command to let players see their current kill count.
