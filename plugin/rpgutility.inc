@@ -161,14 +161,12 @@ stock void AdjustDifficultyConVars(float difficulty){
     */
 }
 
+
 /**
- * @brief Helper function to modify a server ConVar of type float without using sv_cheats.
+ * @brief Safely modifies a float ConVar without requiring sv_cheats.
  *
- * Strips the FCVAR_CHEAT flag, sets the new value, and restores the original flags.
- *
- * @param client The client index who initiated the change.
- * @param command The name of the ConVar to modify.
- * @param value The new float value to set.
+ * @param command The ConVar name to modify.
+ * @param value The new float value.
  */
 stock void StripAndChangeServerConVarFloat(String:command[], float value) {
     new ConVar:conVar = FindConVar(command);
@@ -184,13 +182,11 @@ stock void StripAndChangeServerConVarFloat(String:command[], float value) {
 }
 
 /**
- * @brief Helper function to modify a server ConVar of type bool without using sv_cheats.
+/**
+ * @brief Safely modifies a bool ConVar without requiring sv_cheats.
  *
- * Strips the FCVAR_CHEAT flag, sets the new value, and restores the original flags.
- *
- * @param client The client index who initiated the change.
- * @param command The name of the ConVar to modify.
- * @param value The new bool value to set.
+ * @param command The ConVar name to modify.
+ * @param value The new boolean value.
  */
 stock void StripAndChangeServerConVarBool(String:command[], bool value) {
     new ConVar:conVar = FindConVar(command);
@@ -206,13 +202,10 @@ stock void StripAndChangeServerConVarBool(String:command[], bool value) {
 }
 
 /**
- * @brief Helper function to modify a server ConVar of type int without using sv_cheats.
+ * @brief Safely modifies an integer ConVar without requiring sv_cheats.
  *
- * Strips the FCVAR_CHEAT flag, sets the new value, and restores the original flags.
- *
- * @param client The client index who initiated the change.
- * @param command The name of the ConVar to modify.
- * @param value The new integer value to set.
+ * @param command The ConVar name to modify.
+ * @param value The new integer value.
  */
 stock void StripAndChangeServerConVarInt(String:command[], int value) {
     new ConVar:conVar = FindConVar(command);
@@ -245,9 +238,7 @@ stock int GetExperienceForAlienClass(const char[] victimClassname){
 }
 
 /**
- * @brief Updates the mapping of clients to their corresponding marine entities.
- *
- * Iterates through all clients and updates the global mapping to associate each client with their marine entity.
+ * @brief Updates the client-to-marine mapping for all connected clients.
  */
 stock void UpdateClientMarineMapping(){
     PrintToServer("[AS:RPG] Updating client-marine mapping!");
@@ -265,14 +256,12 @@ stock void UpdateClientMarineMapping(){
 }
 
 /**
- * @brief Safely retrieves an entity's property of entity type.
+ * @brief Safely retrieves an entity's property of type entity index.
  *
- * Checks that the entity is valid and has the property before trying to get it.
- * 
- * @param entity The entity ID to retrieve the property from.
- * @param type The PropType to attempt to access.
- * @param property The string represting the property name.
- * @return Entity index, or -1 if invalid entity / nonexistent property.
+ * @param entity The entity ID.
+ * @param type The property type (PropType).
+ * @param property The name of the property.
+ * @return The entity index or -1 if invalid.
  */
 stock int SafeGetEntPropEnt(int entity, PropType type, char[] property){
     if (IsValidEntity(entity) && HasEntProp(entity, type, property)){
@@ -282,14 +271,12 @@ stock int SafeGetEntPropEnt(int entity, PropType type, char[] property){
 }
 
 /**
- * @brief Safely retrieves an entitie's property of generic type.
+ * @brief Safely retrieves an entity's property of a generic type.
  *
- * Checks that the entity is valid and has the property before trying to get it.
- *
- * @param entity The entity ID to retrieve the property from.
- * @param type The PropType to attempt to access.
- * @param property The string represting the property name.
- * @return Property value, or -1 if invalid entity / nonexistent property.
+ * @param entity The entity ID.
+ * @param type The property type (PropType).
+ * @param property The name of the property.
+ * @return The property value or -1 if invalid.
  */
 stock int SafeGetEntProp(int entity, PropType type, char[] property){
     if (IsValidEntity(entity) && HasEntProp(entity, type, property)){
@@ -299,12 +286,10 @@ stock int SafeGetEntProp(int entity, PropType type, char[] property){
 }
 
 /**
- * @brief Updates the PlayerData array when a client connects or disconnects.
+ * @brief Updates the PlayerData array based on client connection or disconnection.
  *
- * If 
- * Clears the player's data in the global PlayerData array and shifts higher indices down, or fetches their data and adds the player to the array.
- * @param disconnecting Is the client connecting, or disconnecting?
- * @param client The client index of the disconnecting player.
+ * @param disconnecting Whether the client is disconnecting.
+ * @param client The client index.
  */
 stock void UpdatePlayerDataArray(bool disconnecting, int client) {
     PrintToServer("[AS:RPG] Updating playerdata array.")
@@ -324,9 +309,13 @@ stock void UpdatePlayerDataArray(bool disconnecting, int client) {
     }
 }
 
-
-
-
+/**
+ * @brief Calculates a marine's damage boost based on its skills and conditions.
+ *
+ * @param marineIndex The marine entity index.
+ * @param damagetype The type of damage being dealt.
+ * @return The damage boost multiplier.
+ */
 stock float CalculateMarineDamageBoost(int marineIndex, damagetype){
     int client = Swarm_GetClientOfMarine(marineIndex);
     int test = damagetype;    test++; // stfu compiler warning
@@ -343,14 +332,13 @@ stock float CalculateMarineDamageBoost(int marineIndex, damagetype){
     }
     return 1.0;
 }
+
 /**
- * @brief Retrieves the classname of the active weapon for an entity.
+ * @brief Retrieves the classname of the active weapon for a given entity.
  *
- * If 
- * Clears the player's data in the global PlayerData array and shifts higher indices down, or fetches their data and adds the player to the array.
- * @param entity The entity to get the weapon name of.
- * @param name character buffer to place the weapon name into.
- * @param maxLength maximum length of the buffer
+ * @param entity The entity index.
+ * @param name The buffer to store the weapon classname.
+ * @param maxlength The maximum length of the buffer.
  */
 stock void GetEntityActiveWeaponClassname(int entity, String:name[], int maxlength){
     char WeaponName[64];
@@ -365,9 +353,10 @@ stock void GetEntityActiveWeaponClassname(int entity, String:name[], int maxleng
 }
 
 /**
- * @brief Determines if a weapon is 'auto-aim' by classname.
+ * @brief Determines if a weapon is classified as 'auto-aim' by its classname.
  *
- * @param name The classname of the weapon to check.
+ * @param name The classname of the weapon.
+ * @return Whether the weapon is auto-aim capable.
  */
 stock bool IsAutoAimWeapon(char[] name){
     bool isAutoAim = false;

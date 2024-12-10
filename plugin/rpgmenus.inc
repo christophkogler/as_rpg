@@ -75,10 +75,10 @@ stock void FetchSkillsAndShowMenu(int client) {
 }
 
 /**
- * @brief Fetches and displays skill details using global arrays.
+ * @brief Fetches and displays skill details for a specific skill.
  *
  * @param client The client index.
- * @param skillID The selected skill's ID.
+ * @param skillID The skill ID to display details for.
  */
 stock void FetchPlayerSkillLevel(int client, int skillID) {
     // Get player's skill level from global player data
@@ -109,13 +109,13 @@ stock void FetchPlayerSkillLevel(int client, int skillID) {
  * @brief Builds and displays the skill detail submenu.
  *
  * @param client The client index.
- * @param skillID The skill's ID.
+ * @param skillID The skill ID to display.
  * @param skillName The skill's name.
  * @param skillDescription The skill's description.
  * @param maxLevel The skill's maximum level.
  * @param currentLevel The player's current level of the skill.
- * @param type The skill's type (e.g., Active, Passive).
- * @param experienceCost The experience cost for the skill.
+ * @param type The skill type (e.g., Active, Passive).
+ * @param experienceCost The experience cost to unlock the skill.
  */
 stock void BuildAndShowSkillDetailMenu(int client, int skillID, const char[] skillName, const char[] skillDescription, int maxLevel, int currentLevel, const char[] type, int experienceCost) {
     Menu skillDetailMenu = CreateMenu(SkillDetailMenuHandler, MENU_ACTIONS_ALL);
@@ -183,10 +183,15 @@ stock void HandleRefundSkill(int client, Menu menu) {
 
 
 // ------------------------------- Menu Handlers --------------------------------------------
+
 /**
  * @brief Main menu handler.
  *
- * Handles selections in the main menu.
+ * @param menu The current menu handle.
+ * @param action The menu action being handled.
+ * @param param1 Client index or menu action context.
+ * @param param2 Menu item index or data context.
+ * @return int Indicates whether the action was handled successfully.
  */
 stock int MenuHandler1(Menu menu, MenuAction action, int param1, int param2) {
     switch (action) {
@@ -227,7 +232,11 @@ stock int MenuHandler1(Menu menu, MenuAction action, int param1, int param2) {
 /**
  * @brief Skills menu handler.
  *
- * Handles selections in the skills menu.
+ * @param menu The current menu handle.
+ * @param action The menu action being handled.
+ * @param param1 Client index or menu action context.
+ * @param param2 Menu item index or data context.
+ * @return int Indicates whether the action was handled successfully.
  */
 stock int SkillMenuHandler(Menu menu, MenuAction action, int param1, int param2) {
     switch (action) {
@@ -263,7 +272,11 @@ stock int SkillMenuHandler(Menu menu, MenuAction action, int param1, int param2)
 /**
  * @brief Skill detail menu handler.
  *
- * Handles selections in the skill detail submenu.
+ * @param menu The current menu handle.
+ * @param action The menu action being handled.
+ * @param param1 Client index or menu action context.
+ * @param param2 Menu item index or data context.
+ * @return int Indicates whether the action was handled successfully.
  */
 stock int SkillDetailMenuHandler(Menu menu, MenuAction action, int param1, int param2) {
     switch (action) {

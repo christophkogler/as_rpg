@@ -13,8 +13,6 @@ stock void ConnectToDatabase(){
 
 /**
  * @brief Creates necessary database tables if they do not exist.
- *
- * Executes asynchronous SQL queries to ensure the required tables are present in the database.
  */
 stock void CreateTables(){
     SQL_TQuery(g_hDatabase, OnCreateTableFinished,
@@ -32,8 +30,6 @@ stock void CreateTables(){
 
 /**
  * @brief Initializes predefined skills in the database.
- *
- * Inserts skills like "Damage Boost" and "Health Regeneration" into the `skills` table.
  */
 stock void InitializeSkills(){
     SQL_TQuery(g_hDatabase, 
@@ -48,12 +44,11 @@ stock void InitializeSkills(){
 }
 
 /**
- * @brief Initiates an asynchronous query to retrieve a player's kill count.
+ * @brief Retrieves a player's kill count asynchronously.
  *
  * @param sSteamID The Steam ID of the player.
  * @param client The client index requesting the kill count.
- * @param bNotify Whether to send a notification to the player upon retrieval.
- * @return int Returns 0 as the result is handled asynchronously.
+ * @param bNotify Whether to notify the player upon retrieval.
  */
 stock void GetPlayerKillCount(const char[] sSteamID, int client, bool bNotify) { 
     // Create a handle to store the context data
@@ -70,9 +65,7 @@ stock void GetPlayerKillCount(const char[] sSteamID, int client, bool bNotify) {
 }
 
 /**
- * @brief Updates the database with accumulated kills and experience for each client.
- *
- * Iterates through all clients, updates their kill counts and experience in the database, and resets their accumulated counters.
+ * @brief Updates the database with accumulated kills and experience for all clients.
  */
 stock void UpdateDatabase(){
     PrintToServer("[AS:RPG] Updating database with accumulated kills and experience.");
@@ -109,6 +102,15 @@ stock void UpdateDatabase(){
 }
 
 
+/**
+ * @brief Adds a new skill to the database.
+ *
+ * @param name The name of the skill.
+ * @param description A description of the skill.
+ * @param type The type of skill (e.g., active or passive).
+ * @param experience_cost The experience cost to unlock the skill.
+ * @param max_level The maximum level for the skill.
+ */
 stock void AddSkillToDatabase(char[] name, char[] description, char[] type, int experience_cost, int max_level){
     PrintToServer("[AS:RPG] Adding a skill to the database.");
     PrintToServer("[AS:RPG] %s, Type: %s, Experience Cost: %d, Maximum level %d.\n%s", name, type, experience_cost, max_level, description);
@@ -118,6 +120,12 @@ stock void AddSkillToDatabase(char[] name, char[] description, char[] type, int 
     SQL_TQuery(g_hDatabase, OnCreateSkillFinished, sQuery);
 }
 
+
+/**
+ * @brief Deletes a skill from the database by name.
+ *
+ * @param name The name of the skill to delete.
+ */
 stock void DeleteSkillFromDatabase(char[] name){
     PrintToServer("[AS:RPG] Deleting the skill %s from the database.", name);
     char sQuery[512];
@@ -125,6 +133,9 @@ stock void DeleteSkillFromDatabase(char[] name){
     SQL_TQuery(g_hDatabase, OnDeleteSkillFinished, sQuery);
 }
 
+/**
+ * @brief Lists all skills in the database.
+ */
 stock void ListSkillsInDatabase(){
     PrintToServer("[AS:RPG] List all skills.");
     char sQuery[512];
@@ -133,7 +144,9 @@ stock void ListSkillsInDatabase(){
     SQL_TQuery(g_hDatabase, OnListSkillsFinished, sQuery, bUpdateSkillArray);
 }
 
-// when called, clean out the skill array, fetch anew, rebuild it. 
+/**
+ * @brief Updates the skill array by fetching data from the database.
+ */
 stock void UpdateSkillArray(){
     PrintToServer("[AS:RPG] Updating skill array.");
     char sQuery[512];
@@ -142,11 +155,10 @@ stock void UpdateSkillArray(){
     SQL_TQuery(g_hDatabase, OnListSkillsFinished, sQuery, bUpdateSkillArray);
 }
 
-
 /**
- * @brief Initiates fetching for player data.
+ * @brief Initiates a query to fetch and update a player's data.
  *
- * @param client The client index.
+ * @param client The client index to update.
  */
 stock void UpdatePlayerData(int client) {
     PrintToServer("[AS:RPG] Beginning update player data function.");
@@ -168,21 +180,18 @@ stock void UpdatePlayerData(int client) {
     SQL_TQuery(g_hDatabase, OnFetchPlayerDataFinished, query, client);
 }
 
-
-
 //----------------------------------------------------------------------------------------------------------------
 
 
 // --------------------------------------- Database callback functions. -----------------------------------------
+
 /**
- * @brief Callback function invoked after attempting to connect to the database.
+ * @brief Callback invoked after connecting to the database.
  *
- * Handles the result of the asynchronous database connection attempt.
- *
- * @param owner The parent handle (unused in this context).
+ * @param owner The parent handle (unused).
  * @param databaseHandle The handle to the database connection.
  * @param error An error message if the connection failed.
- * @param data Extra data passed during the connection attempt (unused here).
+ * @param data Additional data (unused).
  */
 stock void OnDatabaseConnected(Handle owner, Handle databaseHandle, const char[] error, any data){
     // check the state of the database's handle before it is passed off
@@ -201,14 +210,12 @@ stock void OnDatabaseConnected(Handle owner, Handle databaseHandle, const char[]
 }
 
 /**
- * @brief Callback function invoked after attempting to create a database table.
+ * @brief Callback invoked after attempting to create a table in the database.
  *
- * Handles the result of the asynchronous table creation queries.
- *
- * @param owner The parent handle (unused in this context).
+ * @param owner The parent handle (unused).
  * @param queryHandle The handle to the SQL query result.
  * @param error An error message if the table creation failed.
- * @param data An identifier indicating which table was processed.
+ * @param data The type of table being created.
  */
 stock void OnCreateTableFinished(Handle owner, Handle queryHandle, const char[] error, any data){
     int switcher = data;
@@ -230,14 +237,12 @@ stock void OnCreateTableFinished(Handle owner, Handle queryHandle, const char[] 
 }
 
 /**
- * @brief Callback function invoked after attempting to initialize a skill in the database.
+ * @brief Callback invoked after attempting to initialize a skill in the database.
  *
- * Handles the result of the asynchronous skill initialization queries.
- *
- * @param owner The parent handle (unused in this context).
+ * @param owner The parent handle (unused).
  * @param queryHandle The handle to the SQL query result.
- * @param error An error message if the skill initialization failed.
- * @param data An identifier indicating which skill was processed.
+ * @param error An error message if the initialization failed.
+ * @param data The skill type being initialized.
  */
 stock void OnInitializeSkillFinished(Handle owner, Handle queryHandle, const char[] error, any data){
     int switcher = data;
@@ -260,14 +265,12 @@ stock void OnInitializeSkillFinished(Handle owner, Handle queryHandle, const cha
 }
 
 /**
- * @brief Callback function invoked after attempting to retrieve a player's kill count.
+ * @brief Callback invoked after retrieving a player's kill count.
  *
- * Handles the result of the asynchronous kill count retrieval query and optionally notifies the player.
- *
- * @param owner The parent handle (unused in this context).
+ * @param owner The parent handle (unused).
  * @param queryHandle The handle to the SQL query result.
- * @param error An error message if the retrieval failed.
- * @param data A handle containing context information.
+ * @param error An error message if the query failed.
+ * @param data A handle containing the query context.
  */
 stock void OnGetPlayerKillCountFinished(Handle owner, Handle queryHandle, const char[] error, any data){
     // Unpack the context data
@@ -303,14 +306,12 @@ stock void OnGetPlayerKillCountFinished(Handle owner, Handle queryHandle, const 
 }
 
 /**
- * @brief Callback function invoked after attempting to update a client's kill count.
+ * @brief Callback invoked after updating a player's kill count.
  *
- * Handles the result of the asynchronous kill count update query.
- *
- * @param owner The parent handle (unused in this context).
+ * @param owner The parent handle (unused).
  * @param queryHandle The handle to the SQL query result.
- * @param error An error message if the kill count update failed.
- * @param data The client index associated with this update.
+ * @param error An error message if the update failed.
+ * @param data The client index associated with the update.
  */
 stock void OnUpdateKillCountFinished(Handle owner, Handle queryHandle, const char[] error, any data){
     int client = data;
@@ -322,14 +323,12 @@ stock void OnUpdateKillCountFinished(Handle owner, Handle queryHandle, const cha
 }
 
 /**
- * @brief Callback function invoked after attempting to update a client's experience.
+ * @brief Callback invoked after updating a player's experience.
  *
- * Handles the result of the asynchronous experience update query.
- *
- * @param owner The parent handle (unused in this context).
+ * @param owner The parent handle (unused).
  * @param queryHandle The handle to the SQL query result.
- * @param error An error message if the experience update failed.
- * @param data The client index associated with this update.
+ * @param error An error message if the update failed.
+ * @param data The client index associated with the update.
  */
 stock void OnUpdateExperienceFinished(Handle owner, Handle queryHandle, const char[] error, any data){
     int client = data;
@@ -340,18 +339,42 @@ stock void OnUpdateExperienceFinished(Handle owner, Handle queryHandle, const ch
     }
 }
 
+/**
+ * @brief Callback invoked after creating a skill in the database.
+ *
+ * @param owner The parent handle (unused).
+ * @param queryHandle The handle to the SQL query result.
+ * @param error An error message if the creation failed.
+ * @param data Additional data (unused).
+ */
 stock void OnCreateSkillFinished(Handle owner, Handle queryHandle, const char[] error, any data){
     if (error[0] != '\0' || queryHandle == INVALID_HANDLE || queryHandle == null){
         PrintToServer("[AS:RPG] Failed to create skill! Error: %s", error);
     }
 }
 
+/**
+ * @brief Callback invoked after deleting a skill from the database.
+ *
+ * @param owner The parent handle (unused).
+ * @param queryHandle The handle to the SQL query result.
+ * @param error An error message if the deletion failed.
+ * @param data Additional data (unused).
+ */
 stock void OnDeleteSkillFinished(Handle owner, Handle queryHandle, const char[] error, any data){
     if (error[0] != '\0' || queryHandle == INVALID_HANDLE || queryHandle == null){
         PrintToServer("[AS:RPG] Failed to delete skill! Error: %s", error);
     }
 }
 
+/**
+ * @brief Callback invoked after fetching the skill list.
+ *
+ * @param owner The parent handle (unused).
+ * @param queryHandle The handle to the SQL query result.
+ * @param error An error message if the fetch failed.
+ * @param data Indicates whether the skill array should be updated.
+ */
 stock void OnListSkillsFinished(Handle owner, Handle queryHandle, const char[] error, any data) {
     bool bUpdateSkillArray = bool:data;
     // Check if there was an error or if the handle is invalid
@@ -411,10 +434,12 @@ stock void OnListSkillsFinished(Handle owner, Handle queryHandle, const char[] e
 }
 
 /**
- * @brief Handles the completion of the player data fetch query.
+ * @brief Callback invoked after fetching player data.
  *
- * @param hQuery The SQL query handle.
- * @param iData The client index passed as data.
+ * @param owner The parent handle (unused).
+ * @param queryHandle The handle to the SQL query result.
+ * @param error An error message if the fetch failed.
+ * @param data The client index associated with the fetch.
  */
 public void OnFetchPlayerDataFinished(Handle owner, Handle queryHandle, const char[] error, any data) {
     PrintToServer("[AS:RPG] Fetch callback started.");

@@ -75,7 +75,14 @@ stock Action Command_DifficultyScale(int args){
     return Plugin_Handled;
 }
 
-// Command: sm_addskill <name> <description> <type> <experience_cost> <max_level>
+/**
+ * @brief Console command handler to add a skill.
+ *
+ * Adds a new skill to the RPG system database.
+ *
+ * @param args The number of arguments passed with the command.
+ * @return Action Indicates whether the plugin has handled the command.
+ */
 stock Action Command_AddSkill(int args){
     if (args != 5){
         PrintToServer("[AS:RPG] Usage: sm_addskill \"<name>\" \"<description>\" <type> <experience_cost> <max_level>");
@@ -94,6 +101,14 @@ stock Action Command_AddSkill(int args){
     return Plugin_Handled;
 }
 
+/**
+ * @brief Console command handler to delete a skill.
+ *
+ * Removes an existing skill from the RPG system database.
+ *
+ * @param args The number of arguments passed with the command.
+ * @return Action Indicates whether the plugin has handled the command.
+ */
 stock Action Command_DeleteSkill(int args){
     if (args != 1){
         PrintToServer("[AS:RPG] Usage: sm_deleteskill \"<name>\"");
@@ -108,6 +123,15 @@ stock Action Command_DeleteSkill(int args){
     return Plugin_Handled;
 }
 
+/**
+ * @brief Console command handler to list all skills.
+ *
+ * Displays a list of all skills in the RPG system database.
+ *
+ * @param client The client index who issued the command.
+ * @param args The number of arguments passed with the command.
+ * @return Action Indicates whether the plugin has handled the command.
+ */
 stock Action Command_ListSkills(int client, int args){
     if (args != 0){
         PrintToServer("[AS:RPG] Usage: sm_listskills");
@@ -121,7 +145,15 @@ stock Action Command_ListSkills(int client, int args){
     
     return Plugin_Handled;
 }
- 
+
+/**
+ * @brief Console command handler to set the skill level for a player.
+ *
+ * Sets the skill level of a specified player for a specified skill.
+ *
+ * @param args The number of arguments passed with the command.
+ * @return Action Indicates whether the plugin has handled the command.
+ */
 stock Action Command_SetSkillLevel(int args){
     if (args != 3){
         PrintToServer("[AS:RPG] Usage: sm_addskill \"<player name>\" \"<skill name>\" <level>");
