@@ -3,8 +3,6 @@
 #endif
 #define _rpgdatabase_included
 
-#include <rpgglobals>
-
 // ------------------------- Database interactions. ------------------------------
 /**
  * @brief Initiates an asynchronous connection to the database.
@@ -24,7 +22,7 @@ stock void CreateTables(){
         TableType_Players);
 
     SQL_TQuery(g_hDatabase, OnCreateTableFinished, 
-        "CREATE TABLE IF NOT EXISTS `skills` ( `skill_id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY, `name` VARCHAR(64) NOT NULL, `description` TEXT, `max_level` INT NOT NULL DEFAULT 1);", 
+        "CREATE TABLE IF NOT EXISTS `skills` ( `skill_id` INT NOT NULL AUTO_INCREMENT PRIMARY KEY, `name` VARCHAR(64) NOT NULL, `description` TEXT, `type` VARCHAR(32) NOT NULL, `experience_cost` INT NOT NULL DEFAULT 0, `max_level` INT NOT NULL DEFAULT 1);", 
         TableType_Skills);
 
     SQL_TQuery(g_hDatabase, OnCreateTableFinished, 
@@ -40,12 +38,12 @@ stock void CreateTables(){
 stock void InitializeSkills(){
     SQL_TQuery(g_hDatabase, 
         OnInitializeSkillFinished, 
-        "INSERT IGNORE INTO `skills` (`name`, `description`, `max_level`) VALUES ('Damage Boost', 'Increases your damage output.', 5);", 
+        "INSERT IGNORE INTO `skills` (`name`, `description`, `type`, `experience_cost`, `max_level`) VALUES ('Damage Boost', 'Increases your damage output.', 'Active', 100, 5);", 
         SkillType_DamageBoost);
 
     SQL_TQuery(g_hDatabase, 
         OnInitializeSkillFinished, 
-        "INSERT IGNORE INTO `skills` (`name`, `description`, `max_level`) VALUES ('Health Regeneration', 'Regenerates your health over time.', 3);", 
+        "INSERT IGNORE INTO `skills` (`name`, `description`, `type`, `experience_cost`, `max_level`) VALUES ('Health Regeneration', 'Regenerates your health over time.', 'Passive', 150, 3);", 
         SkillType_HealthRegen);
 }
 
@@ -65,7 +63,7 @@ stock void GetPlayerKillCount(const char[] sSteamID, int client, bool bNotify) {
     PushArrayString(hContext, sSteamID);          // Pack sSteamID
 
     char sQuery[256];
-    Format(sQuery, sizeof(sQuery), "SELECT kills FROM player_kills WHERE steam_id = '%s'", sSteamID);
+    Format(sQuery, sizeof(sQuery), "SELECT kills FROM players WHERE steam_id = '%s'", sSteamID);
     PrintToServer("Client %d initialized database query for their kill count!", client);
 
     SQL_TQuery(g_hDatabase, OnGetPlayerKillCountFinished, sQuery, hContext);
@@ -88,7 +86,7 @@ stock void UpdateDatabase(){
             // Update kills
             if (g_ClientKillAccumulator[client] > 0){
                 Format(sQuery, sizeof(sQuery),
-                    "INSERT INTO player_kills (steam_id, kills) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE kills = kills + %d",
+                    "INSERT INTO players (steam_id, kills) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE kills = kills + %d",
                     sSteamID, g_ClientKillAccumulator[client], g_ClientKillAccumulator[client]
                 );
 
@@ -111,12 +109,12 @@ stock void UpdateDatabase(){
 }
 
 
-stock void AddSkillToDatabase(char[] name, char[] description, int max_level){
+stock void AddSkillToDatabase(char[] name, char[] description, char[] type, int experience_cost, int max_level){
     PrintToServer("[AS:RPG] Adding a skill to the database.");
-    PrintToServer("[AS:RPG] %s, maximum level %d.\n%s", name, max_level, description);
+    PrintToServer("[AS:RPG] %s, Type: %s, Experience Cost: %d, Maximum level %d.\n%s", name, type, experience_cost, max_level, description);
     char sQuery[512];
-    Format(sQuery, sizeof(sQuery), "INSERT INTO skills (name, description, max_level) VALUES ('%s', '%s', %d);",
-           name, description, max_level);
+    Format(sQuery, sizeof(sQuery), "INSERT INTO skills (name, description, type, experience_cost, max_level) VALUES ('%s', '%s', '%s', %d, %d);",
+           name, description, type, experience_cost, max_level);
     SQL_TQuery(g_hDatabase, OnCreateSkillFinished, sQuery);
 }
 
@@ -131,11 +129,48 @@ stock void ListSkillsInDatabase(){
     PrintToServer("[AS:RPG] List all skills.");
     char sQuery[512];
     Format(sQuery, sizeof(sQuery), "SELECT * FROM skills;");
-    SQL_TQuery(g_hDatabase, OnListSkillsFinished, sQuery);
+    bool bUpdateSkillArray = false;
+    SQL_TQuery(g_hDatabase, OnListSkillsFinished, sQuery, bUpdateSkillArray);
 }
 
-//----------------------------------------------------------------------------------------------------------------
+// when called, clean out the skill array, fetch anew, rebuild it. 
+stock void UpdateSkillArray(){
+    PrintToServer("[AS:RPG] Updating skill array.");
+    char sQuery[512];
+    Format(sQuery, sizeof(sQuery), "SELECT * FROM skills;");
+    bool bUpdateSkillArray = true;
+    SQL_TQuery(g_hDatabase, OnListSkillsFinished, sQuery, bUpdateSkillArray);
+}
 
+
+/**
+ * @brief Initiates fetching for player data.
+ *
+ * @param client The client index.
+ */
+stock void UpdatePlayerData(int client) {
+    PrintToServer("[AS:RPG] Beginning update player data function.");
+    // Ensure client is valid
+    if (client <= 0) return;
+
+    char sSteamID[32];
+    GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
+
+    PrintToServer("[AS:RPG] Client %d's steamID is %s", client, sSteamID);
+
+    // query to get player data from player and player_skills table
+    char query[512];
+    Format(query, sizeof(query),
+        "SELECT p.steam_id, p.experience, p.level, p.skill_points, p.kills, ps.skill_id, ps.skill_level FROM players AS p LEFT JOIN player_skills AS ps ON p.steam_id = ps.steam_id WHERE p.steam_id = '%s';",
+        sSteamID);
+    PrintToServer("[AS:RPG] Beginning player data fetch...");
+    // Use client index as data for callback
+    SQL_TQuery(g_hDatabase, OnFetchPlayerDataFinished, query, client);
+}
+
+
+
+//----------------------------------------------------------------------------------------------------------------
 
 
 // --------------------------------------- Database callback functions. -----------------------------------------
@@ -145,23 +180,24 @@ stock void ListSkillsInDatabase(){
  * Handles the result of the asynchronous database connection attempt.
  *
  * @param owner The parent handle (unused in this context).
- * @param hndl The handle to the database connection.
+ * @param databaseHandle The handle to the database connection.
  * @param error An error message if the connection failed.
  * @param data Extra data passed during the connection attempt (unused here).
  */
-stock void OnDatabaseConnected(Handle owner, Handle hndl, const char[] error, any data){
+stock void OnDatabaseConnected(Handle owner, Handle databaseHandle, const char[] error, any data){
     // check the state of the database's handle before it is passed off
-    if (hndl == null || hndl == INVALID_HANDLE){
+    if (databaseHandle == null || databaseHandle == INVALID_HANDLE){
         PrintToServer("[AS:RPG] Could not connect to database: %s", error);
         return;
     }
 
     // handle is valid, so connect. cast the handle to a database.
-    g_hDatabase = Database:hndl;
+    g_hDatabase = Database:databaseHandle;
     PrintToServer("[AS:RPG] Connected to database!");
 
     CreateTables();
     InitializeSkills();
+    UpdateSkillArray();
 }
 
 /**
@@ -170,14 +206,14 @@ stock void OnDatabaseConnected(Handle owner, Handle hndl, const char[] error, an
  * Handles the result of the asynchronous table creation queries.
  *
  * @param owner The parent handle (unused in this context).
- * @param hndl The handle to the SQL query result.
+ * @param queryHandle The handle to the SQL query result.
  * @param error An error message if the table creation failed.
  * @param data An identifier indicating which table was processed.
  */
-stock void OnCreateTableFinished(Handle owner, Handle hndl, const char[] error, any data){
+stock void OnCreateTableFinished(Handle owner, Handle queryHandle, const char[] error, any data){
     int switcher = data;
 
-    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
+    if (error[0] != '\0' || queryHandle == INVALID_HANDLE || queryHandle == null){
         PrintToServer("[AS:RPG] Failed to create/verify table type %d: %s", data, error);
         return;
     }
@@ -199,13 +235,13 @@ stock void OnCreateTableFinished(Handle owner, Handle hndl, const char[] error, 
  * Handles the result of the asynchronous skill initialization queries.
  *
  * @param owner The parent handle (unused in this context).
- * @param hndl The handle to the SQL query result.
+ * @param queryHandle The handle to the SQL query result.
  * @param error An error message if the skill initialization failed.
  * @param data An identifier indicating which skill was processed.
  */
-stock void OnInitializeSkillFinished(Handle owner, Handle hndl, const char[] error, any data){
+stock void OnInitializeSkillFinished(Handle owner, Handle queryHandle, const char[] error, any data){
     int switcher = data;
-    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
+    if (error[0] != '\0' || queryHandle == INVALID_HANDLE || queryHandle == null){
         switch (switcher){
             case SkillType_DamageBoost:
                 PrintToServer("[AS:RPG] Failed to insert/verify 'Damage Boost' skill: %s", error);
@@ -229,11 +265,11 @@ stock void OnInitializeSkillFinished(Handle owner, Handle hndl, const char[] err
  * Handles the result of the asynchronous kill count retrieval query and optionally notifies the player.
  *
  * @param owner The parent handle (unused in this context).
- * @param hndl The handle to the SQL query result.
+ * @param queryHandle The handle to the SQL query result.
  * @param error An error message if the retrieval failed.
  * @param data A handle containing context information.
  */
-stock void OnGetPlayerKillCountFinished(Handle owner, Handle hndl, const char[] error, any data){
+stock void OnGetPlayerKillCountFinished(Handle owner, Handle queryHandle, const char[] error, any data){
     // Unpack the context data
     Handle hContext = view_as<Handle>(data);
 
@@ -247,11 +283,11 @@ stock void OnGetPlayerKillCountFinished(Handle owner, Handle hndl, const char[] 
     int playerKills = 0;
     bool hasKills = false;
 
-    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null) {
+    if (error[0] != '\0' || queryHandle == INVALID_HANDLE || queryHandle == null) {
         PrintToServer("[AS:RPG] Failed to retrieve kill count for player %s: %s", sSteamID, error);
     } else {
-        if (SQL_FetchRow(hndl)) {
-            playerKills = SQL_FetchInt(hndl, 0);
+        if (SQL_FetchRow(queryHandle)) {
+            playerKills = SQL_FetchInt(queryHandle, 0);
             hasKills = true;
         }
     }
@@ -272,15 +308,15 @@ stock void OnGetPlayerKillCountFinished(Handle owner, Handle hndl, const char[] 
  * Handles the result of the asynchronous kill count update query.
  *
  * @param owner The parent handle (unused in this context).
- * @param hndl The handle to the SQL query result.
+ * @param queryHandle The handle to the SQL query result.
  * @param error An error message if the kill count update failed.
  * @param data The client index associated with this update.
  */
-stock void OnUpdateKillCountFinished(Handle owner, Handle hndl, const char[] error, any data){
+stock void OnUpdateKillCountFinished(Handle owner, Handle queryHandle, const char[] error, any data){
     int client = data;
     char sSteamID[32];
     GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
-    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
+    if (error[0] != '\0' || queryHandle == INVALID_HANDLE || queryHandle == null){
         PrintToServer("[AS:RPG] Failed to update kill count for player %s: %s", sSteamID, error);
     }
 }
@@ -291,56 +327,141 @@ stock void OnUpdateKillCountFinished(Handle owner, Handle hndl, const char[] err
  * Handles the result of the asynchronous experience update query.
  *
  * @param owner The parent handle (unused in this context).
- * @param hndl The handle to the SQL query result.
+ * @param queryHandle The handle to the SQL query result.
  * @param error An error message if the experience update failed.
  * @param data The client index associated with this update.
  */
-stock void OnUpdateExperienceFinished(Handle owner, Handle hndl, const char[] error, any data){
+stock void OnUpdateExperienceFinished(Handle owner, Handle queryHandle, const char[] error, any data){
     int client = data;
     char sSteamID[32];
     GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
-    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
+    if (error[0] != '\0' || queryHandle == INVALID_HANDLE || queryHandle == null){
         PrintToServer("[AS:RPG] Failed to update experience for player %s: %s", sSteamID, error);
     }
 }
 
-stock void OnCreateSkillFinished(Handle owner, Handle hndl, const char[] error, any data){
-    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
+stock void OnCreateSkillFinished(Handle owner, Handle queryHandle, const char[] error, any data){
+    if (error[0] != '\0' || queryHandle == INVALID_HANDLE || queryHandle == null){
         PrintToServer("[AS:RPG] Failed to create skill! Error: %s", error);
     }
 }
 
-stock void OnDeleteSkillFinished(Handle owner, Handle hndl, const char[] error, any data){
-    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null){
+stock void OnDeleteSkillFinished(Handle owner, Handle queryHandle, const char[] error, any data){
+    if (error[0] != '\0' || queryHandle == INVALID_HANDLE || queryHandle == null){
         PrintToServer("[AS:RPG] Failed to delete skill! Error: %s", error);
     }
 }
 
-stock void OnListSkillsFinished(Handle owner, Handle hndl, const char[] error, any data) {
+stock void OnListSkillsFinished(Handle owner, Handle queryHandle, const char[] error, any data) {
+    bool bUpdateSkillArray = bool:data;
     // Check if there was an error or if the handle is invalid
-    if (error[0] != '\0' || hndl == INVALID_HANDLE || hndl == null) {    PrintToServer("[AS:RPG] Failed to get skills! Error: %s", error);    return;    }
+    if (error[0] != '\0' || queryHandle == INVALID_HANDLE || queryHandle == null) {    
+        PrintToServer("[AS:RPG] Failed to get skills! Error: %s", error);    
+        return;    
+    }
 
     // Begin processing the result set
-    PrintToServer("[AS:RPG] Skills list retrieved successfully:");
+    if (bUpdateSkillArray)    
+        PrintToServer("[AS:RPG] Beginning skill list rebuild:");
+    else                    
+        PrintToServer("[AS:RPG] Skills list retrieved successfully:");
+
     int rowCount = 0;
 
+    if (bUpdateSkillArray)    
+        g_SkillList.Clear();    // reset skill array
+
     // Iterate through each row in the result set
-    while (SQL_FetchRow(hndl)) {
+    while (SQL_FetchRow(queryHandle)) {
+        int skillID;
         char skillName[64];
         char skillDescription[256];
-        int skillLevel;
+        char skillType[32];
+        int experienceCost;
+        int maxLevel;
 
-        // Retrieve the skill name and level from the current row
-        SQL_FetchString(hndl, 0, skillName, sizeof(skillName));
-        skillLevel = SQL_FetchInt(hndl, 1);
+        // Retrieve the skill details from the current row
+        skillID = SQL_FetchInt(queryHandle, 0);
+        SQL_FetchString(queryHandle, 1, skillName, sizeof(skillName));
+        SQL_FetchString(queryHandle, 2, skillDescription, sizeof(skillDescription));
+        maxLevel = SQL_FetchInt(queryHandle, 3);
+        SQL_FetchString(queryHandle, 4, skillType, sizeof(skillType));
+        experienceCost = SQL_FetchInt(queryHandle, 5);
 
         // Print the skill information to the server console
-        PrintToServer("[AS:RPG] Skill #%d: %s - max level %d - %s", ++rowCount, skillName, skillLevel, skillDescription);
+        PrintToServer("[AS:RPG] Skill #%d: %s - Type: %s - Experience Cost: %d - Max Level: %d - %s", 
+            ++rowCount, skillName, skillType, experienceCost, maxLevel, skillDescription);
 
-        // refresh global stored skills
+        if (bUpdateSkillArray){
+            SkillData newSkill;
+            newSkill.skillDescription = skillDescription;
+            newSkill.skillID = skillID;
+            newSkill.type = skillType;
+            newSkill.experience_cost = experienceCost;
+            newSkill.maxLevel = maxLevel;
+            newSkill.skillName = skillName;
+            g_SkillList.PushArray(newSkill);
+        }
     }
 
     // Check if no rows were retrieved
-    if (rowCount == 0) {    PrintToServer("[AS:RPG] No skills found in the database.");    }
+    if (rowCount == 0) {    
+        PrintToServer("[AS:RPG] No skills found in the database.");    
+    }
+}
+
+/**
+ * @brief Handles the completion of the player data fetch query.
+ *
+ * @param hQuery The SQL query handle.
+ * @param iData The client index passed as data.
+ */
+public void OnFetchPlayerDataFinished(Handle owner, Handle queryHandle, const char[] error, any data) {
+    PrintToServer("[AS:RPG] Fetch callback started.");
+
+    int client = view_as<int>(data);
+
+    // Ensure client is valid and still connected
+    if (client <= 0) return; // they dont need to be in the game for the server to load their data from db
+                                    //this is called only on connecting(?)
+
+    if (queryHandle == null || queryHandle == INVALID_HANDLE){
+        LogError("[AS:RPG] Failed to execute player data query for client %d. Error: %s", client, error);  
+        return;
+    }
+
+    PrintToServer("[AS:RPG] Loading playerdata for client %d", client);
+
+    StringMap playerSkillDataTrie = g_PlayerData[client].skillsTrie;
+
+
+    bool firstLoop = true;
+    while (SQL_FetchRow(queryHandle)) {
+        char sSteamID[32];      
+        SQL_FetchString(queryHandle, 0, sSteamID, sizeof(sSteamID));
+        int experience = SQL_FetchInt(queryHandle, 1);
+        int level = SQL_FetchInt(queryHandle, 2);
+        int skill_points = SQL_FetchInt(queryHandle, 3);
+        int kills = SQL_FetchInt(queryHandle, 4);
+        int skillID = SQL_FetchInt(queryHandle, 5);
+        int currentLevel = SQL_FetchInt(queryHandle, 6);
+
+        // Update core player data - only need to do once.
+        if (firstLoop) {
+            g_PlayerData[client].experience = experience;
+            g_PlayerData[client].kills = kills;
+            g_PlayerData[client].level = level;
+            g_PlayerData[client].skill_points = skill_points;
+            firstLoop = false;
+        }
+
+        // set the trie value for the STRING equivalent of skillId to currentlevel.
+        // EX: skill Damage Boost with skillID 88 would be key "88"
+        char skillIDString[16];
+        IntToString(skillID, skillIDString, sizeof(skillIDString));
+        SetTrieValue(g_PlayerData[client].skillsTrie, skillIDString, currentLevel);
+    }
+    
+    PrintToServer("[AS:RPG] Player data update completed!");
 }
 // -----------------------------------------------------------------------------------------------------------
