@@ -3,7 +3,6 @@
 #endif
 #define _rpgutility_included
 
-#include <rpgglobals>
 // -------------------------------------------------- Utility / helper functions. ------------------------------------
 /**
  * @brief Spawns an entity by its classname at a specified position with optional model and range.
@@ -53,7 +52,7 @@ stock void SpawnEntityByName(const char[] classname, float position[3], const fl
  * @param args The number of arguments passed with the command.
  * @return Action Indicates whether the plugin has handled the command.
  */
-void AdjustDifficultyConVars(float difficulty){
+stock void AdjustDifficultyConVars(float difficulty){
     // ???
     if(difficulty < 0.25) StripAndChangeServerConVarInt("ai_inhibit_spawners", 0);
     else StripAndChangeServerConVarInt("ai_inhibit_spawners", 1);
@@ -171,7 +170,7 @@ void AdjustDifficultyConVars(float difficulty){
  * @param command The name of the ConVar to modify.
  * @param value The new float value to set.
  */
-void StripAndChangeServerConVarFloat(String:command[], float value) {
+stock void StripAndChangeServerConVarFloat(String:command[], float value) {
     new ConVar:conVar = FindConVar(command);
     if (conVar == INVALID_HANDLE) {
         PrintToServer("ConVar '%s' not found or invalid.", command);
@@ -193,7 +192,7 @@ void StripAndChangeServerConVarFloat(String:command[], float value) {
  * @param command The name of the ConVar to modify.
  * @param value The new bool value to set.
  */
-void StripAndChangeServerConVarBool(String:command[], bool value) {
+stock void StripAndChangeServerConVarBool(String:command[], bool value) {
     new ConVar:conVar = FindConVar(command);
     if (conVar == INVALID_HANDLE) {
         PrintToServer("ConVar '%s' not found or invalid.", command);
@@ -215,7 +214,7 @@ void StripAndChangeServerConVarBool(String:command[], bool value) {
  * @param command The name of the ConVar to modify.
  * @param value The new integer value to set.
  */
-void StripAndChangeServerConVarInt(String:command[], int value) {
+stock void StripAndChangeServerConVarInt(String:command[], int value) {
     new ConVar:conVar = FindConVar(command);
     if (conVar == INVALID_HANDLE) {
         PrintToServer("ConVar '%s' not found or invalid.", command);
@@ -234,7 +233,7 @@ void StripAndChangeServerConVarInt(String:command[], int value) {
  * @param victimClassname The classname string of the alien.
  * @return int The experience points awarded for the kill.
  */
-int GetExperienceForAlienClass(const char[] victimClassname){
+stock int GetExperienceForAlienClass(const char[] victimClassname){
     if (StrEqual(victimClassname, "asw_drone")){            return 10;    }
     else if (StrEqual(victimClassname, "asw_boomer")){      return 15;    }
     else if (StrEqual(victimClassname, "asw_zombine")){     return 20;    }
@@ -259,7 +258,7 @@ stock void UpdateClientMarineMapping(){
             PrintToServer("[AS:RPG] Client %d got marine %d!", client, g_ClientToMarine[client])
         }
         else{
-            PrintToServer("[AS:RPG] Client %d not in game!", client)
+            //PrintToServer("[AS:RPG] Client %d not in game!", client)
             g_ClientToMarine[client] = -1;
         }
     }
@@ -298,4 +297,82 @@ stock int SafeGetEntProp(int entity, PropType type, char[] property){
     }
     else return -1;
 }
+
+/**
+ * @brief Updates the PlayerData array when a client connects or disconnects.
+ *
+ * If 
+ * Clears the player's data in the global PlayerData array and shifts higher indices down, or fetches their data and adds the player to the array.
+ * @param disconnecting Is the client connecting, or disconnecting?
+ * @param client The client index of the disconnecting player.
+ */
+stock void UpdatePlayerDataArray(bool disconnecting, int client) {
+    PrintToServer("[AS:RPG] Updating playerdata array.")
+    // Assume PlayerData is a global array with MAX_PLAYERS as the size
+    // Define MAX_PLAYERS based on your game, typically 64 for Source games
+    if(disconnecting){
+        PrintToServer("[AS:RPG] Cleaning up disconnecting player's data.")
+        PlayerData emptyPlayer;    g_PlayerData[client] = emptyPlayer;                                          // Clear the disconnecting player's data
+        for (int i = client; i < MAXPLAYERS - 1; i++) {    g_PlayerData[i] = g_PlayerData[i + 1];    }          // Shift players above this index down by one
+        g_PlayerData[MAXPLAYERS - 1] = emptyPlayer;                                                 // Clear the second-to-last slot after the shift; old data.
+    }
+    else{
+        // if connecting, then...
+        // get client number, fetch?
+        PrintToServer("[AS:RPG] Getting connecting client's data.")
+        UpdatePlayerData(client);
+    }
+}
+
+
+
+
+stock float CalculateMarineDamageBoost(int marineIndex, damagetype){
+    int client = Swarm_GetClientOfMarine(marineIndex);
+    int test = damagetype;    test++; // stfu compiler warning
+    if (client != -1){
+        //StringMap playerSkillsTrie = StringMap:g_PlayerData[client].skillsTrie;
+        // get the active weapon.
+        //char WeaponName[64];
+        //GetEntityActiveWeaponClassname(attacker, WeaponName, sizeof(WeaponName));
+        
+        // get all skillids from g_SkillData into an array
+        // for each skilldata where type == 'general_offensive', get ID.
+            // see if the player skills trie has a value for the (stringified) id. if so, multiply 
+
+    }
+    return 1.0;
+}
+/**
+ * @brief Retrieves the classname of the active weapon for an entity.
+ *
+ * If 
+ * Clears the player's data in the global PlayerData array and shifts higher indices down, or fetches their data and adds the player to the array.
+ * @param entity The entity to get the weapon name of.
+ * @param name character buffer to place the weapon name into.
+ * @param maxLength maximum length of the buffer
+ */
+stock void GetEntityActiveWeaponClassname(int entity, String:name[], int maxlength){
+    char WeaponName[64];
+    int attackerWeaponEntityID = SafeGetEntPropEnt(entity, Prop_Send, "m_hActiveWeapon");
+    if(!IsValidEntity(attackerWeaponEntityID)){ attackerWeaponEntityID = SafeGetEntPropEnt(entity, Prop_Send, "m_hASWActiveWeapon"); }
+
+    // If weapon is valid, get its classname
+    if (IsValidEntity(attackerWeaponEntityID)){    GetEntityClassname(attackerWeaponEntityID, WeaponName, sizeof(WeaponName));    }
+    else{    strcopy(WeaponName, sizeof(WeaponName), "UnknownWeapon");    }
+
+    strcopy(name, maxlength, WeaponName);
+}
+
+/**
+ * @brief Determines if a weapon is 'auto-aim' by classname.
+ *
+ * @param name The classname of the weapon to check.
+ */
+stock bool IsAutoAimWeapon(char[] name){
+    bool isAutoAim = false;
+    if(StrEqual(name, "asw_weapon_prifle") || StrEqual(name, "asw_weapon_autogun")) isAutoAim = true;
+    return isAutoAim;
+}
+
 // ----------------------------------------------------------------------------------------------------------------
