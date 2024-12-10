@@ -1,7 +1,7 @@
-#if defined _rpgdefinitions_included
+#if defined _rpgglobals_included
  #endinput
 #endif
-#define _rpgdefinitions_included
+#define _rpgglobals_included
 
 // ----------------------------------------- Definitions, global variables, and enums. -----------------------------------------------
 
@@ -16,11 +16,7 @@
 #define REFUNDCHOICE "#refund"
 // -----------------------------------------------------------------
 
-
-
 // -------------------------- Enums ---------------------------------------------
-
-
 // load all skills from database into a global data structure on plugin load?
 // more efficient to take up an extra 10mb of ram than hit a SQL server anytime somebody looks at the skill menu.
 // same reason for the PlayerData array.
@@ -31,9 +27,12 @@
  * Contains experience points, level, skill points, and kill count for each player.
  */
 enum struct SkillData {
+    int skillID;
     char skillName[64];
     char skillDescription[256];
-    int skillLevel;
+    int maxLevel;
+    char type[32];
+    int experience_cost;
 }
 // how to make an array of appropriate size???
 // how to define the size of a GLOBAL array from OnPluginStart???
@@ -48,7 +47,7 @@ enum struct PlayerData {
     int level;
     int skill_points;
     int kills;
-    // how to hold skills of player, and their levels? basically a set of keyvals?
+    StringMap skillsTrie; // Trie to store skill ids (keys) and levels (values)
 }
 
 /**
@@ -75,14 +74,15 @@ enum SkillType {
 
 
 // --------------------------- Variables, arrays ----------------------------------------
-Database g_hDatabase = null; // Global database handle
+
+Database g_hDatabase = null;                // Global database handle
+ArrayList g_SkillList = null;               // Global skill ArrayList handle
 
 int g_ClientToMarine[MAXPLAYERS + 1];                       // array that tracks which client goes to which marine: clienttomarine[client] = marine
 int g_ClientKillAccumulator[MAXPLAYERS + 1];                // array that tracks each alien a person kills              between db updates
 int g_ClientExperienceAccumulator[MAXPLAYERS + 1];          // array that tracks how much client each person has        between db updates
 
-PlayerData g_PlayerData[MAXPLAYERS + 1];                    // array of playerdata to hold player data? IDK its NOT complete or ready.
-
+PlayerData g_PlayerData[MAXPLAYERS + 1];                    // array of playerdata to hold player data? IDK, its NOT complete or ready.
 
 // --------------- These settings are tune-able without immediately breaking things. Use with caution. --------------------
 const float ExperienceSharingRate = 0.25; // 0 - inf. greather than 1 would be kind of dumb.
