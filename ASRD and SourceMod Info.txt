@@ -5,45 +5,33 @@ Plugins I took inspiration from:
  - all4dead2 (author James Richardson (grandwazir))
  - EasyPluginMaker (author NaathySz)
 
-For myself.
+These are just some things that I wanted to keep for reference.
 
-SDKHooks exposes the following forwards:
-/**
- * @brief When an entity is created
- *
- * @param        entity        Entity index
- * @param        classname    Class name
- * @noreturn
- */
-forward OnEntityCreated(entity, const String:classname[]);
+Inserting and removing enum structs from an adt Array:
 
-/**
- * @brief When an entity is destroyed
- *
- * @param        entity        Entity index
- * @noreturn
- */
-forward OnEntityDestroyed(entity);
+enum struct SkillData {
+    int example;
+}
+...
+g_SkillList = CreateArray(sizeof(SkillData)); // generate array with block size
+...
+SkillData newskill = ...
+g_SkillList.PushArray(newSkill);	// push the struct onto the array, AS AN ARRAY!
+...
+SkillData skill;					
+g_SkillList.GetArray(i, skill);		// place cell array into a SkillData
 
-/**
- * @brief When the game description is retrieved
- *
- * @param        gameDesc        Game description
- * @noreturn
- */
-forward Action:OnGetGameDescription(String:gameDesc[64]);
 
-/**
- * @brief When the level is initialized
- *
- * @param        mapName            Name of the map
- * @param        mapEntities    Entities of the map
- * @noreturn
- */
-forward Action:OnLevelInit(const String:mapName[], String:mapEntities[2097152]); 
+I spend twenty hours looking for the event list and eventually discover:
+Alien Swarm: Reactive Drop is open source. The source code is on GitHub. Including ALL the game event definitions, which I have been hunting for.
+
+https://github.com/ReactiveDrop/reactivedrop_public_src/blob/531236c3932d3d4a767c12d5331d3ac6108d1ab0/reactivedrop/resource/modevents.res
+
+Default SourceMod forwards can be browsed at:
+https://github.com/search?q=repo%3Aalliedmodders%2Fsourcemod%20%3Ecreateforward(&type=code
 
 These forwards are optionally delegated functions. 
-In effect, you can write a function with the same name into your plugin to call it when the forward occurs.
+In effect, you can write a function with the same name into your plugin, and it will be called when the forward occurs.
 
 SDKHook() allows a custom function to be called whenever the Hooked event occurs.
 The function SDKHook() takes three parameters: SDKHook(entityID, SDKHookType, callback_Function).
