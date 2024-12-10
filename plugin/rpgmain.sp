@@ -22,20 +22,19 @@ TO-DO:
 #include <dbi>
 #include <swarmtools>
 
-#include <rpgcommands>
-#include <rpgdatabase>
-#include <rpgglobals>
-#include <rpgmenus>
-#include <rpgutility>
+#include "rpgglobals"
+#include "rpgcommands"
+#include "rpgdatabase"
+#include "rpgmenus"
+#include "rpgutility"
 
 public Plugin myinfo = {
     name = "AS:RPG",
     author = "Christoph Kogler",
-    description = "Counts your kills. :(",
-    version = "1.0.3",
+    description = "Gain experience, level up, acquire skills, and conquer increasingly difficult challenges.",
+    version = "1.0.4",
     url = "https://github.com/christophkogler/as_rpg"
 };
-
 
 
 // ------------------------- Plugin utility functions. ----------------------------------------------------
@@ -44,11 +43,17 @@ public Plugin myinfo = {
  *
  * Initializes kill counters, connects to the database, hooks events, registers console commands, and creates a timer for database updates.
  */
+
 public void OnPluginStart()
 {
-    PrintToServer("[AS:RPG] Initializing Kill Counter!");
+    PrintToServer("[AS:RPG] Initializing Alien Swarm: RPG!");
 
-    LoadTranslations("menu_test.phrases");
+    // This will hold all skills in storage, so the server doesn't have to fetch it every time a player visits the menu.
+    // We HAVE to evaluate the size of SkillData and initialize the array at runtime, can't predefine it in rpgglobals.
+    // Sourcepawn limitation around evaluating enum structs, I guess? LAME. Oh well.
+    g_SkillList = CreateArray(sizeof(SkillData));
+    //LoadTranslations("menu_test.phrases");
+
     RegConsoleCmd("menu_test1", Menu_Test1);
 
     // Initialize arrays
@@ -60,7 +65,7 @@ public void OnPluginStart()
         g_PlayerData[i].level = 1;
         g_PlayerData[i].skill_points = 0;
         g_PlayerData[i].kills = 0;
-        //g_PlayerData[i].skills = new Dictionary;
+        g_PlayerData[i].skillsTrie = new StringMap();
     }
 
     ConnectToDatabase();
@@ -71,12 +76,16 @@ public void OnPluginStart()
     HookEvent("player_connect", Event_PlayerConnect);
     HookEvent("player_disconnect", Event_PlayerDisconnect);
 
+    //HookEventEx("*", Event_Print, EventHookMode_Post);
+
     RegConsoleCmd("sm_killcount", Command_KillCount);
+
     RegAdminCmd("sm_spawnentity", Command_SpawnEntity, ADMFLAG_GENERIC);
+
     RegServerCmd("sm_difficultyscale", Command_DifficultyScale);
 
     RegServerCmd("sm_addskill", Command_AddSkill, "Adds a new skill to the database.");
-    RegServerCmd("sm_listskills", Command_ListSkills, "Lists all skills in the database.");
+    RegConsoleCmd("sm_listskills", Command_ListSkills, "List the skills in the database."); // 
     RegServerCmd("sm_deleteskill", Command_DeleteSkill, "Deletes a skill by name from the database.");
 
     CreateTimer(30.0, Timer_UpdateDatabase, _, TIMER_REPEAT);
@@ -113,8 +122,36 @@ public void OnPluginEnd()
  * @param dontBroadcast Whether to broadcast the event.
  */
 public void Event_PlayerConnect(Event event, const char[] name, bool dontBroadcast){
-    int client = GetClientOfUserId(event.GetInt("userid"));
-    if (client > 0){UpdateClientMarineMapping();}
+    /*
+    int client = event.GetInt("index") + 1;
+    //PrintToServer("[AS:RPG] Event_PlayerConnect fired. Connecting client index: %d", client);
+
+    if (client > 0){
+        UpdateClientMarineMapping();
+        bool disconnect = false;
+        UpdatePlayerDataArray(disconnect, client);
+    }
+    else{
+        PrintToServer("[AS:RPG] ERROR! Connecting client ID was less than zero?")
+    }
+    */
+}
+
+/**
+ * @brief OnClientAuthorized, retrieve the client index from the event and initializes their data in the server.
+ * 
+ * The DB uses getsteamauth to get SteamID. Client needs to be connected enough to authorize to update player data array.
+ *
+ * @param event The event data.
+ * @param name The name of the event.
+ * @param dontBroadcast Whether to broadcast the event.
+ */
+public void OnClientAuthorized(int client, const char[] auth){
+    if (client > 0){
+        UpdateClientMarineMapping();
+        bool disconnect = false;
+        UpdatePlayerDataArray(disconnect, client);
+    }
 }
 
 /**
@@ -128,7 +165,12 @@ public void Event_PlayerConnect(Event event, const char[] name, bool dontBroadca
  */
 public void Event_PlayerDisconnect(Event event, const char[] name, bool dontBroadcast){
     int client = GetClientOfUserId(event.GetInt("userid"));
-    if (client > 0){    UpdateDatabase();    UpdateClientMarineMapping();    }
+    if (client > 0){    
+        UpdateDatabase();    
+        UpdateClientMarineMapping();
+        bool disconnect = true;
+        UpdatePlayerDataArray(disconnect, client);
+    }
 }
 
 /**
@@ -177,9 +219,6 @@ public Action OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
     decl String:AttackerClass[64];
     decl String:InflictorClass[64];
 
-    int attackerWeaponEntityID = -1;
-    decl String:WeaponName[64];
-
     bool changedDamageValue = false;
 
     // make sure the victim and attacker are valid entities.
@@ -205,26 +244,11 @@ public Action OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
             PrintToServer("[AS:RPG] [DEBUGGING] A marine took a new type of damage: %d", damagetype);
         }
     } 
-    // if the attacker is a marine, we (will) need to apply damage boosting stuff...
-    else if(StrEqual(AttackerClass, "asw_marine")){    
-        // safely try to retrieve the weapon the attacker is using; m_hActiveWeapon is normally right. try ASW active weapon if it isnt for some reason
-        attackerWeaponEntityID = SafeGetEntPropEnt(attacker, Prop_Send, "m_hActiveWeapon");
-        if(!IsValidEntity(attackerWeaponEntityID)){ attackerWeaponEntityID = SafeGetEntPropEnt(attacker, Prop_Send, "m_hASWActiveWeapon"); }
-
-        // If weapon is valid, get its classname
-        if (IsValidEntity(attackerWeaponEntityID)){    GetEntityClassname(attackerWeaponEntityID, WeaponName, sizeof(WeaponName));    }
-        else{    strcopy(WeaponName, sizeof(WeaponName), "UnknownWeapon");    }
-        
-        // damage = CalculateMarineDamageBoost(attacker, damage, damagetype);
-        // chandedDamageValue = true;
-
-        if (StrEqual(WeaponName, "asw_weapon_prifle") || StrEqual(WeaponName, "asw_weapon_autogun")){
-            if(damagetype == 128){
-            // MELEE!
-            // SPECIFICALLY clubbing with the weapon? make it scale differently based on weapon? MAYBE!
-            // damage = CalculateMarineMeleeDamageBoost(attacker, damage, damagetype)
-            }
-            damage *= 2; // Increase damage by 15x for the prototype rifle and autogun.
+    // if the attacker is a marine, calculate damage boost(s)...
+    else if(StrEqual(AttackerClass, "asw_marine")){
+        float damageAdjustment = CalculateMarineDamageBoost(attacker, damagetype);
+        if(damageAdjustment != 0.00){
+            damage *= damageAdjustment;
             changedDamageValue = true;
         }
     }
@@ -232,11 +256,8 @@ public Action OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
     // Debug output
     //PrintToServer("[AS:RPG] [DEBUGGING] OnTakeDamage: victim %d (%s), attacker %d (%s), inflictor %d (%s), weapon %s, damage %f, damagetype %d", victim, VictimClass, attacker, AttackerClass, inflictor, InflictorClass, WeaponName, damage, damagetype);
 
-    if(changedDamageValue){
-        return Plugin_Changed;
-    }else{
-        return Plugin_Continue;
-    }
+    if(changedDamageValue){    return Plugin_Changed;    }
+    else{    return Plugin_Continue;    }
 }
 
 /**
@@ -345,3 +366,4 @@ public Action Timer_UpdateDatabase(Handle timer){
 
 
 
+// -------------------------------------- Experimental Junkyard -------------------------------------------------------
