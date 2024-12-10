@@ -24,7 +24,7 @@ Currently, it:
    -  The server files are `srcds.exe` and `srcds_console.exe`.
 2. This can be found by right clicking on the server in the library, hovering your mouse over *Manage >* and selecting *Browse Local Files*.
 3. Install [SourceMod](https://www.sourcemod.net/downloads.php?branch=stable) and [MetaMod:Source](https://www.sourcemm.net/downloads.php?branch=stable).
-4. This plugin uses [swarmtools](https://forums.alliedmods.net/showthread.php?p=1361373).
+4. This plugin uses a minorly modified version of [swarmtools](https://forums.alliedmods.net/showthread.php?p=1361373) - I literally just commented out the function that checked if the game was Alien Swarm.
 5. Place swarmtools.inc into `...\sourcemod\scripting\include\`
 6. SourceMod comes with the necessary functionality to compile .sp files.  
    - Simply drag and drop the .sp onto the executable at `...\sourcemod\scripting\spcomp.exe`, or execute spcomp.exe targeting the file, ie `path\to\spcomp.exe example\file\path.sp`.
