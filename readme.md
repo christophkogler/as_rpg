@@ -12,12 +12,11 @@ Currently, it:
  - Persistently tracks each player's stats (kills, experience).
  - Automatically implements a few dummy skills that do nothing.
  - Implements a menu system that doesn't do anything (besides display the list of available skills).
- - Doubles the autogun and prototype rifle's damage.
  - Adds multiple commands!
-    - Adds a command to let players see their current kill count.
+    - Adds console commands to let players see their current kill count and list skills.
     - Adds an admin command to spawn an entity by name on their own marine.
     - Adds a Server command to scale difficulty ConVars.
-    - Adds Server commands for creating, listing, and removing skills.
+    - Adds Server commands for creating and removing skills.
 
 ### Setup:
 
