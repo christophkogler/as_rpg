@@ -75,19 +75,21 @@ stock Action Command_DifficultyScale(int args){
     return Plugin_Handled;
 }
 
-// Command: sm_addskill <name> <description> <max_level>
+// Command: sm_addskill <name> <description> <type> <experience_cost> <max_level>
 stock Action Command_AddSkill(int args){
-    if (args != 3){
-        PrintToServer("[AS:RPG] Usage: sm_addskill \"<name>\" \"<description>\" <max_level>");
+    if (args != 5){
+        PrintToServer("[AS:RPG] Usage: sm_addskill \"<name>\" \"<description>\" <type> <experience_cost> <max_level>");
         return Plugin_Handled;
     }
 
-    char name[64], description[256];
+    char name[64], description[256], type[32];
     GetCmdArg(1, name, sizeof(name));
     GetCmdArg(2, description, sizeof(description));
-    int max_level = GetCmdArgInt(3);
+    GetCmdArg(3, type, sizeof(type));
+    int experience_cost = GetCmdArgInt(4);
+    int max_level = GetCmdArgInt(5);
 
-    AddSkillToDatabase(name, description, max_level);
+    AddSkillToDatabase(name, description, type, experience_cost, max_level);
 
     return Plugin_Handled;
 }
@@ -106,12 +108,34 @@ stock Action Command_DeleteSkill(int args){
     return Plugin_Handled;
 }
 
-stock Action Command_ListSkills(int args){
+stock Action Command_ListSkills(int client, int args){
     if (args != 0){
         PrintToServer("[AS:RPG] Usage: sm_listskills");
         return Plugin_Handled;
     }
-    ListSkillsInDatabase();
+
+
+    
+    ListSkillsInDatabase(); 
+
+    
     return Plugin_Handled;
 }
+ 
+stock Action Command_SetSkillLevel(int args){
+    if (args != 3){
+        PrintToServer("[AS:RPG] Usage: sm_addskill \"<player name>\" \"<skill name>\" <level>");
+        return Plugin_Handled;
+    }
+
+    //char name[64], skillName[256];
+    //GetCmdArg(1, name, sizeof(name));
+    //GetCmdArg(2, skillName, sizeof(skillName));
+    //int level = GetCmdArgInt(3);
+
+    // SetClientSkillToLevel()
+
+    return Plugin_Handled;
+}
+
 // ----------------------------------------------------------------------------------------------------------------
