@@ -24,17 +24,18 @@ Currently, it:
    -  The server files are `srcds.exe` and `srcds_console.exe`.
 2. This can be found by right clicking on the server in the library, hovering your mouse over *Manage >* and selecting *Browse Local Files*.
 3. Install [SourceMod](https://www.sourcemod.net/downloads.php?branch=stable) and [MetaMod:Source](https://www.sourcemm.net/downloads.php?branch=stable).
-4. This plugin uses a minorly modified version of [swarmtools](https://forums.alliedmods.net/showthread.php?p=1361373) - I literally just commented out the function that checked if the game was Alien Swarm.
-5. Place swarmtools.inc into `...\sourcemod\scripting\include\`
-6. SourceMod comes with the necessary functionality to compile .sp files.  
+4. This plugin requires [swarmtools](https://forums.alliedmods.net/showthread.php?p=1361373).
+   - Swarmtools only requires a tiny modification to work in Reactive Drop - I simply disabled the check for if it was in Alien Swarm.
+6. Place swarmtools.inc into `...\sourcemod\scripting\include\`
+7. SourceMod comes with the necessary functionality to compile .sp files.  
    - Simply drag and drop the .sp onto the executable at `...\sourcemod\scripting\spcomp.exe`, or execute spcomp.exe targeting the file, ie `path\to\spcomp.exe example\file\path.sp`.
-7. Compile both swarmtools.sp and kill_counter.sp using spcomp.
+8. Compile both swarmtools.sp and rpgmain.sp using spcomp.
    - This will produce .smx files, which go into your sourcemod\plugins folder.
-8. [Set up your MySQL server.](https://dev.mysql.com/doc/mysql-getting-started/en/) This plugin has only been tested with MySQL 8.4 @ localhost.
+9. [Set up your MySQL server.](https://dev.mysql.com/doc/mysql-getting-started/en/) This plugin has only been tested with MySQL 8.4 @ localhost.
    - Create a new database, and a user for the server. I reccommend naming the user something like `reactivedropserver`.
 10. Alter your database config, `...\Alien Swarm Reactive Drop\reactivedrop\addons\sourcemod\configs\databases.cfg` 'default' options, to match.
    - `host` is the IP of the server. If you are running the dedicated server and the MySQL server on the same computer, this should remain as `localhost`.
    - `database` is the name of the database the server will work in. I recommend `reactivedrop`.
    - `user` is the name of the new MySQL user you made to give the server access.
    - `pass` is the password of the server's MySQL user.
-11. Start your dedicated server and count your kills!
+11. You should be ready to go!
