@@ -8,8 +8,10 @@ I try to only commit functional code, but I can't catch any (or probably even mo
 <br>
 <br>
 Currently, it:
- - Persistently tracks each player's stats (kills, skills, experience)
- - Skeleton of a few dummy skills that do nothing.
+ - Uses an SQL database to hold players, player_skills, and skills tables.
+ - Persistently tracks each player's stats (kills, experience).
+ - Automatically implements a few dummy skills that do nothing.
+ - Implements a menu system that doesn't do anything (besides display the list of available skills).
  - Doubles the autogun and prototype rifle's damage.
  - Adds multiple commands!
     - Adds a command to let players see their current kill count.
@@ -18,7 +20,7 @@ Currently, it:
     - Adds Server commands for creating, listing, and removing skills.
 
 ### Setup:
-<br>
+
 1. Install the Alien Swarm: Reactive Drop Dedicated Server through the Steam Library. In the case of AS:RD, the dedicated server installed via the Steam Library is in the same folder as the game: `...\steamapps\common\Alien Swarm Reactive Drop\srcds`.
    -  The server files are `srcds.exe` and `srcds_console.exe`.
 2. This can be found by right clicking on the server in the library, hovering your mouse over *Manage >* and selecting *Browse Local Files*.
