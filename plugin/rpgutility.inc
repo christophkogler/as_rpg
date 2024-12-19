@@ -292,11 +292,11 @@ stock int SafeGetEntProp(int entity, PropType type, char[] property){
  * @param client The client index.
  */
 stock void UpdatePlayerDataArray(bool disconnecting, int client) {
-    PrintToServer("[AS:RPG] Updating playerdata array.")
+    //PrintToServer("[AS:RPG] Updating playerdata array.")
     // Assume PlayerData is a global array with MAX_PLAYERS as the size
     // Define MAX_PLAYERS based on your game, typically 64 for Source games
     if(disconnecting){
-        PrintToServer("[AS:RPG] Cleaning up disconnecting player's data.")
+        PrintToServer("[AS:RPG] Updating playerdata array: cleaning up disconnecting player's data.")
         PlayerData emptyPlayer;    g_PlayerData[client] = emptyPlayer;                                          // Clear the disconnecting player's data
         for (int i = client; i < MAXPLAYERS - 1; i++) {    g_PlayerData[i] = g_PlayerData[i + 1];    }          // Shift players above this index down by one
         g_PlayerData[MAXPLAYERS - 1] = emptyPlayer;                                                 // Clear the second-to-last slot after the shift; old data.
@@ -304,7 +304,7 @@ stock void UpdatePlayerDataArray(bool disconnecting, int client) {
     else{
         // if connecting, then...
         // get client number, fetch?
-        PrintToServer("[AS:RPG] Getting connecting client's data.")
+        PrintToServer("[AS:RPG] Updating playerdata array: getting connecting client's data.")
         UpdatePlayerData(client);
     }
 }
@@ -364,4 +364,29 @@ stock bool IsAutoAimWeapon(char[] name){
     return isAutoAim;
 }
 
+/**
+ * @brief Hooks alien_died, entity_killed, player_connect, and player_disconnect.
+ */
+stock void HookRelevantEvents(){
+    HookEvent("alien_died", Event_AlienDied);
+    HookEvent("entity_killed", Event_EntityKilled);
+
+    HookEvent("player_connect", Event_PlayerConnect);
+    HookEvent("player_disconnect", Event_PlayerDisconnect);
+}
+
+
+/**
+ * @brief Creates a series of custom commands.
+ */
+stock void CreateCustomCommands(){
+    RegConsoleCmd("sm_killcount", Command_KillCount);
+    RegConsoleCmd("sm_listskills", Command_ListSkills, "List the skills in the database."); // 
+
+    RegAdminCmd("sm_spawnentity", Command_SpawnEntity, ADMFLAG_GENERIC);
+
+    RegServerCmd("sm_difficultyscale", Command_DifficultyScale);
+    RegServerCmd("sm_addskill", Command_AddSkill, "Adds a new skill to the database.");
+    RegServerCmd("sm_deleteskill", Command_DeleteSkill, "Deletes a skill by name from the database.");
+}
 // ----------------------------------------------------------------------------------------------------------------
