@@ -2,7 +2,7 @@
 Alien Swarm: Reactive drop PluGin, A.K.A., AS:RPG
     -   Persistent!
 
-TO-DO:
+    TO-DO:
     -   New varieties of enemies? Various HL2 mobs should be available - IE antlion, combine and zombie varieties.
         -   Few combines, enemies that shoot back SUCK in Alien Swarm, UNLESS I can make them and the swarm hostile to each other.
     -   Minibosses - enemies with effects, auras, increased health/speed/damage.
@@ -48,45 +48,17 @@ public void OnPluginStart()
 {
     PrintToServer("[AS:RPG] Initializing Alien Swarm: RPG!");
 
-    // This will hold all skills in storage, so the server doesn't have to fetch it every time a player visits the menu.
-    // We HAVE to evaluate the size of SkillData and initialize the array at runtime, can't predefine it in rpgglobals.
-    // Sourcepawn limitation around evaluating enum structs, I guess? LAME. Oh well.
-    g_SkillList = CreateArray(sizeof(SkillData));
-    //LoadTranslations("menu_test.phrases");
+    g_SkillList = new StringMap();
 
     RegConsoleCmd("menu_test1", Menu_Test1);
 
-    // Initialize arrays
-    for (int i = 0; i <= MaxClients; i++)
-    {
-        g_ClientToMarine[i] = -1;
-        g_ClientKillAccumulator[i] = 0;
-        g_PlayerData[i].experience = 0;
-        g_PlayerData[i].level = 1;
-        g_PlayerData[i].skill_points = 0;
-        g_PlayerData[i].kills = 0;
-        g_PlayerData[i].skillsTrie = new StringMap();
-    }
+    // Initialize all playerdatas
+    for (int i = 0; i <= MaxClients; i++){    g_PlayerData[i].Init();    }
 
-    ConnectToDatabase();
+    ConnectToDatabase(); // rpgdatabase.inc
 
-    HookEvent("alien_died", OnAlienKilled);
-    HookEvent("entity_killed", OnEntityKilled);
-
-    HookEvent("player_connect", Event_PlayerConnect);
-    HookEvent("player_disconnect", Event_PlayerDisconnect);
-
-    //HookEventEx("*", Event_Print, EventHookMode_Post);
-
-    RegConsoleCmd("sm_killcount", Command_KillCount);
-
-    RegAdminCmd("sm_spawnentity", Command_SpawnEntity, ADMFLAG_GENERIC);
-
-    RegServerCmd("sm_difficultyscale", Command_DifficultyScale);
-
-    RegServerCmd("sm_addskill", Command_AddSkill, "Adds a new skill to the database.");
-    RegConsoleCmd("sm_listskills", Command_ListSkills, "List the skills in the database."); // 
-    RegServerCmd("sm_deleteskill", Command_DeleteSkill, "Deletes a skill by name from the database.");
+    HookRelevantEvents(); // rpgutility.inc
+    CreateCustomCommands();
 
     CreateTimer(30.0, Timer_UpdateDatabase, _, TIMER_REPEAT);
 }
@@ -111,7 +83,7 @@ public void OnPluginEnd()
 
 
 
-// -------------------------------------- In-game events. -------------------------------------------------------
+// -------------------------------------- Hooked events. ----------------------------------------------------------
 /**
  * @brief Handles the player connect event.
  *
@@ -137,22 +109,6 @@ public void Event_PlayerConnect(Event event, const char[] name, bool dontBroadca
     */
 }
 
-/**
- * @brief OnClientAuthorized, retrieve the client index from the event and initializes their data in the server.
- * 
- * The DB uses getsteamauth to get SteamID. Client needs to be connected enough to authorize to update player data array.
- *
- * @param event The event data.
- * @param name The name of the event.
- * @param dontBroadcast Whether to broadcast the event.
- */
-public void OnClientAuthorized(int client, const char[] auth){
-    if (client > 0){
-        UpdateClientMarineMapping();
-        bool disconnect = false;
-        UpdatePlayerDataArray(disconnect, client);
-    }
-}
 
 /**
  * @brief Handles the player disconnect event.
@@ -169,6 +125,117 @@ public void Event_PlayerDisconnect(Event event, const char[] name, bool dontBroa
         UpdateDatabase();    
         UpdateClientMarineMapping();
         bool disconnect = true;
+        UpdatePlayerDataArray(disconnect, client);
+    }
+}
+
+
+/**
+ * @brief Called when an alien is killed.
+ *
+ * Increments the kill counter for the corresponding client who killed the alien. Also, give them one extra bullet.
+ *
+ * @param event The event data.
+ * @param name The name of the event.
+ * @param dontBroadcast Whether to broadcast the event.
+ */
+public void Event_AlienDied(Event event, const char[] name, bool dontBroadcast){
+    int client = -1;
+    int marineEntityID = event.GetInt("marine");
+    if (Swarm_IsGameActive()) client = Swarm_GetClientOfMarine(marineEntityID);
+    PrintToServer("[AS:RPG] OnAlienKilled: Client killing alien was %d, using marine %d.", client, marineEntityID)
+    if (client != -1){
+        int attackerWeaponEntityID = -1;
+        int weaponMaxAmmo = 0;
+        int currentAmmo = 0;
+
+        attackerWeaponEntityID = SafeGetEntPropEnt(marineEntityID, Prop_Send, "m_hActiveWeapon");
+        if (attackerWeaponEntityID == -1){
+            PrintToServer("[AS:RPG] Client %d's marine %d killed an alien without an active weapon?", client, marineEntityID);
+        } 
+
+        currentAmmo = SafeGetEntProp(marineEntityID, Prop_Send, "m_iAmmo");
+        if (currentAmmo == -1){
+            PrintToServer("[AS:RPG] Failed to get m_iAmmo or -1 max ammo for client %d's marine %d's weapon entity %d.", client, marineEntityID, attackerWeaponEntityID);
+        } 
+        else{
+            PrintToServer("[AS:RPG] m_iAmmo = %d", currentAmmo);
+        }
+
+        weaponMaxAmmo = SafeGetEntProp(attackerWeaponEntityID, Prop_Send, "m_iPrimaryAmmoCount");
+        if (weaponMaxAmmo == -1){
+            PrintToServer("[AS:RPG] Failed to get m_iPrimaryAmmoCount or -1 max ammo for client %d's marine %d's weapon entity %d.", client, marineEntityID, attackerWeaponEntityID);
+        } 
+
+        //SetEntProp(marineEntityID, Prop_Send, "m_iAmmo", currentAmmo+1)
+
+        g_ClientKillAccumulator[client]++;    
+    }
+}
+
+/**
+ * @brief Called when any entity is killed.
+ *
+ * Logs details about the killed entity and awards experience if applicable.
+ *
+ * @param event The event data.
+ * @param name The name of the event.
+ * @param dontBroadcast Whether to broadcast the event.
+ */
+public void Event_EntityKilled(Event event, const char[] name, bool dontBroadcast){
+    if (!Swarm_IsGameActive()) return;
+
+    int entindex_killed = event.GetInt("entindex_killed");
+    int entindex_attacker = event.GetInt("entindex_attacker");
+
+    if (!IsValidEntity(entindex_killed) || !IsValidEntity(entindex_attacker)) return;    // Early return if invalid entities
+
+    char victimClassname[256];
+    GetEntityClassname(entindex_killed, victimClassname, sizeof(victimClassname));
+
+    char modelName[256];
+    GetEntPropString(entindex_killed, Prop_Data, "m_ModelName", modelName, sizeof(modelName));
+
+    char attackerClassname[256];
+    GetEntityClassname(entindex_attacker, attackerClassname, sizeof(attackerClassname));
+
+    if (StrEqual(attackerClassname, "asw_marine")){    
+        // Example: Determine experience based on victim class
+        int experienceGained = GetExperienceForAlienClass(victimClassname);
+        int client = Swarm_GetClientOfMarine(entindex_attacker);
+        if (client != -1){
+            g_ClientExperienceAccumulator[client] += experienceGained;
+            g_ClientKillAccumulator[client]++;
+            PrintToServer("[AS:RPG] Client %d killed %s and earned %d XP.", client, victimClassname, experienceGained);
+        }
+        // give other actively playing clients 25% the experience. You don't miss out (much!) when killing things as a group! 
+        for(int otherClients = 0; otherClients < MaxClients; otherClients++){
+            if(otherClients == client || g_ClientToMarine[otherClients] == -1 || !IsClientConnected(otherClients)) continue;
+            g_ClientExperienceAccumulator[otherClients] += RoundToNearest( float(experienceGained) * ExperienceSharingRate);
+        }
+    }
+
+    // Debug output
+    PrintToServer("[AS:RPG] Entity killed: index %d, classname '%s', model name '%s'", entindex_killed, victimClassname, modelName);
+}
+// -------------------------------------------------------------------------------------------------------
+
+
+
+// -------------------------------------- Forwards. -------------------------------------------------------
+/**
+ * @brief OnClientAuthorized, retrieve the client index from the event and initializes their data in the server.
+ * 
+ * The DB uses getsteamauth to get SteamID. Client needs to be connected enough to authorize to update player data array.
+ *
+ * @param event The event data.
+ * @param name The name of the event.
+ * @param dontBroadcast Whether to broadcast the event.
+ */
+public void OnClientAuthorized(int client, const char[] auth){
+    if (client > 0){
+        UpdateClientMarineMapping();
+        bool disconnect = false;
         UpdatePlayerDataArray(disconnect, client);
     }
 }
@@ -258,91 +325,6 @@ public Action OnTakeDamage(victim, &attacker, &inflictor, &Float:damage, &damage
 
     if(changedDamageValue){    return Plugin_Changed;    }
     else{    return Plugin_Continue;    }
-}
-
-/**
- * @brief Called when an alien is killed.
- *
- * Increments the kill counter for the corresponding client who killed the alien. Also, give them one extra bullet.
- *
- * @param event The event data.
- * @param name The name of the event.
- * @param dontBroadcast Whether to broadcast the event.
- */
-public void OnAlienKilled(Event event, const char[] name, bool dontBroadcast){
-    int client = -1;
-    int marineEntityID = event.GetInt("marine");
-    if (Swarm_IsGameActive()) client = Swarm_GetClientOfMarine(marineEntityID);
-    if (client != -1){
-        int attackerWeaponEntityID = -1;
-        int weaponMaxAmmo = 0;
-        int currentAmmo = 0;
-
-        attackerWeaponEntityID = SafeGetEntPropEnt(marineEntityID, Prop_Send, "m_hActiveWeapon");
-        if (attackerWeaponEntityID == -1){
-            PrintToServer("[AS:RPG] Client %d's marine %d killed an alien without an active weapon?", client, marineEntityID);
-        } 
-
-        currentAmmo = SafeGetEntProp(marineEntityID, Prop_Send, "m_iAmmo");
-        if (currentAmmo == -1){
-            PrintToServer("[AS:RPG] Client %d's marine %d's weapon had no ammo, or -1.", client, marineEntityID);
-        } 
-
-        weaponMaxAmmo = SafeGetEntProp(attackerWeaponEntityID, Prop_Send, "m_iPrimaryAmmoCount");
-        if (weaponMaxAmmo == -1){
-            PrintToServer("[AS:RPG] Failed to get ammo count or -1 max ammo for client %d's marine %d's weapon entity %d.", client, marineEntityID, attackerWeaponEntityID);
-        } 
-
-        SetEntProp(marineEntityID, Prop_Send, "m_iAmmo", currentAmmo+1)
-
-        g_ClientKillAccumulator[client]++;    
-    }
-}
-
-/**
- * @brief Called when any entity is killed.
- *
- * Logs details about the killed entity and awards experience if applicable.
- *
- * @param event The event data.
- * @param name The name of the event.
- * @param dontBroadcast Whether to broadcast the event.
- */
-public void OnEntityKilled(Event event, const char[] name, bool dontBroadcast){
-    if (!Swarm_IsGameActive()) return;
-
-    int entindex_killed = event.GetInt("entindex_killed");
-    int entindex_attacker = event.GetInt("entindex_attacker");
-
-    if (!IsValidEntity(entindex_killed) || !IsValidEntity(entindex_attacker)) return;    // Early return if invalid entities
-
-    char victimClassname[256];
-    GetEntityClassname(entindex_killed, victimClassname, sizeof(victimClassname));
-
-    char modelName[256];
-    GetEntPropString(entindex_killed, Prop_Data, "m_ModelName", modelName, sizeof(modelName));
-
-    char attackerClassname[256];
-    GetEntityClassname(entindex_attacker, attackerClassname, sizeof(attackerClassname));
-
-    if (StrEqual(attackerClassname, "asw_marine")){    
-        // Example: Determine experience based on victim class
-        int experienceGained = GetExperienceForAlienClass(victimClassname);
-        int client = Swarm_GetClientOfMarine(entindex_attacker);
-        if (client != -1){
-            g_ClientExperienceAccumulator[client] += experienceGained;
-            g_ClientKillAccumulator[client]++;
-            PrintToServer("[AS:RPG] Client %d killed %s and earned %d XP.", client, victimClassname, experienceGained);
-        }
-        // give other actively playing clients 25% the experience. You don't miss out (much!) when killing things as a group! 
-        for(int otherClients = 0; otherClients < MaxClients; otherClients++){
-            if(otherClients == client || g_ClientToMarine[otherClients] == -1 || !IsClientConnected(otherClients)) continue;
-            g_ClientExperienceAccumulator[otherClients] += RoundToNearest( float(experienceGained) * ExperienceSharingRate);
-        }
-    }
-
-    // Debug output
-    PrintToServer("[AS:RPG] Entity killed: index %d, classname '%s', model name '%s'", entindex_killed, victimClassname, modelName);
 }
 //----------------------------------------------------------------------------------------------------------------
 
