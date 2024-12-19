@@ -161,21 +161,24 @@ stock void UpdateSkillArray(){
  * @param client The client index to update.
  */
 stock void UpdatePlayerData(int client) {
-    PrintToServer("[AS:RPG] Beginning update player data function.");
+    //PrintToServer("[AS:RPG] Beginning update player data function.");
+
     // Ensure client is valid
     if (client <= 0) return;
 
     char sSteamID[32];
     GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
 
-    PrintToServer("[AS:RPG] Client %d's steamID is %s", client, sSteamID);
+    //PrintToServer("[AS:RPG] Client %d's steamID is %s", client, sSteamID);
 
     // query to get player data from player and player_skills table
     char query[512];
     Format(query, sizeof(query),
         "SELECT p.steam_id, p.experience, p.level, p.skill_points, p.kills, ps.skill_id, ps.skill_level FROM players AS p LEFT JOIN player_skills AS ps ON p.steam_id = ps.steam_id WHERE p.steam_id = '%s';",
         sSteamID);
-    PrintToServer("[AS:RPG] Beginning player data fetch...");
+    
+    //PrintToServer("[AS:RPG] Beginning player data fetch...");
+
     // Use client index as data for callback
     SQL_TQuery(g_hDatabase, OnFetchPlayerDataFinished, query, client);
 }
@@ -423,7 +426,10 @@ stock void OnListSkillsFinished(Handle owner, Handle queryHandle, const char[] e
             newSkill.experience_cost = experienceCost;
             newSkill.maxLevel = maxLevel;
             newSkill.skillName = skillName;
-            g_SkillList.PushArray(newSkill);
+
+            char skillIDStr[16];
+            IntToString(skillID, skillIDStr, sizeof(skillIDStr));
+            g_SkillList.SetArray(skillIDStr, newSkill, sizeof(newSkill)); // insert to skillist stringmap as array
         }
     }
 
@@ -442,7 +448,7 @@ stock void OnListSkillsFinished(Handle owner, Handle queryHandle, const char[] e
  * @param data The client index associated with the fetch.
  */
 public void OnFetchPlayerDataFinished(Handle owner, Handle queryHandle, const char[] error, any data) {
-    PrintToServer("[AS:RPG] Fetch callback started.");
+    //PrintToServer("[AS:RPG] Fetch callback started.");
 
     int client = view_as<int>(data);
 
@@ -455,10 +461,10 @@ public void OnFetchPlayerDataFinished(Handle owner, Handle queryHandle, const ch
         return;
     }
 
-    PrintToServer("[AS:RPG] Loading playerdata for client %d", client);
+    //PrintToServer("[AS:RPG] Loading playerdata for client %d", client);
 
     StringMap playerSkillDataTrie = g_PlayerData[client].skillsTrie;
-
+    playerSkillDataTrie.Clear();
 
     bool firstLoop = true;
     while (SQL_FetchRow(queryHandle)) {
@@ -484,9 +490,9 @@ public void OnFetchPlayerDataFinished(Handle owner, Handle queryHandle, const ch
         // EX: skill Damage Boost with skillID 88 would be key "88"
         char skillIDString[16];
         IntToString(skillID, skillIDString, sizeof(skillIDString));
-        SetTrieValue(g_PlayerData[client].skillsTrie, skillIDString, currentLevel);
+        playerSkillDataTrie.SetValue(skillIDString, currentLevel);
     }
     
-    PrintToServer("[AS:RPG] Player data update completed!");
+    PrintToServer("[AS:RPG] Client %d's player data updated!", client);
 }
 // -----------------------------------------------------------------------------------------------------------
