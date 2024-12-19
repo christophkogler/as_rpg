@@ -51,15 +51,21 @@ stock void FetchSkillsAndShowMenu(int client) {
     skillMenu.SetTitle("Available Skills");
 
     bool skillsFound = false;
-
-    // Iterate through global skill list
-    for (int i = 0; i < g_SkillList.Length; i++) {
+    // get a snapshot of the global skills stringmap
+    StringMapSnapshot snapshot = view_as<StringMapSnapshot>(CreateTrieSnapshot(g_SkillList));
+    int skillsCount = snapshot.Length;
+    // iterate through the snapshot length
+    for (new i = 0; i < skillsCount; i++) {
+        // get the i-th key value
+        char key[32];    snapshot.GetKey(i, key, sizeof(key));
+        // build skill page
         SkillData skill;
-        g_SkillList.GetArray(i, skill);
+        g_SkillList.GetArray(key, skill, sizeof(skill)); // enums have to be retrieved as arrays(?)
         char info[32];
         Format(info, sizeof(info), "%d", skill.skillID);
         skillMenu.AddItem(info, skill.skillName, ITEMDRAW_DEFAULT);
         skillsFound = true;
+
     }
 
     // If no skills are found, display a message
@@ -81,50 +87,42 @@ stock void FetchSkillsAndShowMenu(int client) {
  * @param skillID The skill ID to display details for.
  */
 stock void FetchPlayerSkillLevel(int client, int skillID) {
-    // Get player's skill level from global player data
+    // Transform the skillID to a string
     char skillIDStr[16];
     IntToString(skillID, skillIDStr, sizeof(skillIDStr));
 
+    // Get current level of the skill, if they have it.
     int currentLevel = 0;
-    StringMap playerSkillsTrie = StringMap:g_PlayerData[client].skillsTrie;
+    StringMap playerSkillsTrie = g_PlayerData[client].skillsTrie;
     bool hasSkill = GetTrieValue(playerSkillsTrie, skillIDStr, currentLevel);
 
-    // Fetch skill details from global skill list
+    // Fetch the skill's details from the global skill list
     SkillData skill;
-    for (int i = 0; i < g_SkillList.Length; i++) {
-        g_SkillList.GetArray(i, skill);
-        if (skill.skillID == skillID) break;
-    }
+    g_SkillList.GetArray(skillIDStr, skill, sizeof(skill));
 
-    // If the player doesn't have the skill yet, current level is 0
-    if (!hasSkill) {
-        currentLevel = 0;
-    }
+    // If we couldn't retrieve the skill from their skill list, the player doesn't have the skill yet, so make sure current level is 0
+    // is this even a necessary step? GetTrieValue shouldn't modify variable until after type checks, right?
+    if (!hasSkill) {   currentLevel = 0;   }
 
     // Build and display skill detail menu
-    BuildAndShowSkillDetailMenu(client, skillID, skill.skillName, skill.skillDescription, skill.maxLevel, currentLevel, skill.type, skill.experience_cost);
+    BuildAndShowSkillDetailMenu(client, skill, currentLevel);
 }
 
 /**
  * @brief Builds and displays the skill detail submenu.
  *
  * @param client The client index.
- * @param skillID The skill ID to display.
- * @param skillName The skill's name.
- * @param skillDescription The skill's description.
- * @param maxLevel The skill's maximum level.
+ * @param skill The skill to display.
  * @param currentLevel The player's current level of the skill.
- * @param type The skill type (e.g., Active, Passive).
- * @param experienceCost The experience cost to unlock the skill.
  */
-stock void BuildAndShowSkillDetailMenu(int client, int skillID, const char[] skillName, const char[] skillDescription, int maxLevel, int currentLevel, const char[] type, int experienceCost) {
+stock void BuildAndShowSkillDetailMenu(int client, SkillData skill, int currentLevel) {
     Menu skillDetailMenu = CreateMenu(SkillDetailMenuHandler, MENU_ACTIONS_ALL);
 
     // Construct menu title with detailed information
     char menuTitle[512];
     Format(menuTitle, sizeof(menuTitle), 
            "Skill Details\nName: %s\nDescription: %s\nType: %s\nExperience Cost: %d\nLevel: %d/%d", 
-           skillName, skillDescription, type, experienceCost, currentLevel, maxLevel);
+           skill.skillName, skill.skillDescription, skill.type, skill.experience_cost, currentLevel, skill.maxLevel);
     skillDetailMenu.SetTitle(menuTitle);
 
     // Add purchase and refund options
@@ -148,15 +146,7 @@ stock void BuildAndShowSkillDetailMenu(int client, int skillID, const char[] ski
  */
 stock void HandlePurchaseSkill(int client, Menu menu) {
     // TODO: Implement purchase logic
-    // 1. Determine the skillID from the menu context or item info.
-        // extract menu title > break string at first space/newline > find item in g_SkillData by name to get skillID
-    // 2. Check if the player has enough experience to purchase.
-    // 3. Deduct experience and increase skill level in the database.
-    // 4. Notify the player of the successful purchase.
-    char menuTitle[512];
-    GetMenuTitle(menu, menuTitle, sizeof(menuTitle));
-
-    PrintToServer("[AS:RPG] Client %d attempted to purchase a skill.", client);
+    PrintToServer("[AS:RPG] Client %d attempted to purchase skill %d.", client, g_ClientLookingAtSkillID[client]);
     PrintToChat(client, "Purchase functionality is not yet implemented.");
 }
 
@@ -168,16 +158,26 @@ stock void HandlePurchaseSkill(int client, Menu menu) {
  */
 stock void HandleRefundSkill(int client, Menu menu) {
     // TODO: Implement refund logic
-    // Example steps:
-    // 1. Determine the skillID from the menu context or item info.
-    // 2. Check if the player can refund the skill.
-    // 3. Add experience and decrease skill level in the database.
-    // 4. Notify the player of the successful refund.
-    char menuTitle[512];
-    GetMenuTitle(menu, menuTitle, sizeof(menuTitle));
-    // break string by spaces, first piece is title
-    // retrieve skill information from global list by name
-    PrintToServer("[AS:RPG] Client %d attempted to refund a skill.", client);
+    // check if the player has the skill in their skill list
+    // check if the skillid has a value in the client's playerdata skillstrie
+    StringMap playerDataSkillsTrie = g_PlayerData[client].skillsTrie;
+
+    int skillLevel = 0;
+    char skillIDStr[16];
+
+    IntToString(g_ClientLookingAtSkillID[client], skillIDStr,sizeof(skillIDStr));
+
+    bool playerHasSkill = playerDataSkillsTrie.GetValue(skillIDStr,skillLevel); // if we can get the value, the player has at least A level of the skill.
+
+    if(playerHasSkill){
+        if(skillLevel == 1){
+            // refund skill
+            playerDataSkillsTrie.Remove(skillIDStr);
+            // RemovePlayerSkill(client, g_ClientLookingAtSkillID[client]);
+        }
+        // UpdatePlayerSkillLevel
+    }
+    PrintToServer("[AS:RPG] Client %d attempted to refund skill %d.", client, g_ClientLookingAtSkillID[client]);
     PrintToChat(client, "Refund functionality is not yet implemented.");
 }
 
@@ -200,11 +200,11 @@ stock int MenuHandler1(Menu menu, MenuAction action, int param1, int param2) {
         }
 
         case MenuAction_Display:{
-            char buffer[255];
-            Format(buffer, sizeof(buffer), "", "Character Overview", param1);
+            //char buffer[255];
+            //Format(buffer, sizeof(buffer), "", "Character Overview", param1);
         
-            Panel panel = view_as<Panel>(param2);
-            panel.SetTitle(buffer);
+            //Panel panel = view_as<Panel>(param2);
+            //panel.SetTitle(buffer);
         }
 
         case MenuAction_Select:{
@@ -249,16 +249,16 @@ stock int SkillMenuHandler(Menu menu, MenuAction action, int param1, int param2)
         }
 
         case MenuAction_Select: {
+            int client = param1;
+            int menuItemPosition = param2;
             char info[32];
-            menu.GetItem(param2, info, sizeof(info));
-            if (StrEqual(info, BACKCHOICE)) {
-                // Go back to the main menu
-                ShowMainMenu(param1);
-            } else {
-                // Handle skill selection
+            menu.GetItem(menuItemPosition, info, sizeof(info));
+            if (StrEqual(info, BACKCHOICE)) {    ShowMainMenu(client);    } 
+            else {
                 int skillID = StringToInt(info);
-                PrintToServer("Client %d selected skill ID: %d", param1, skillID);
-                FetchPlayerSkillLevel(param1, skillID); // Fetch and show skill details
+                PrintToServer("[AS:RPG] Client %d selected skill ID: %d", client, skillID);
+                g_ClientLookingAtSkillID[client] = skillID;
+                FetchPlayerSkillLevel(client, skillID); // Fetch and show skill details
             }
         }
 
@@ -280,16 +280,18 @@ stock int SkillMenuHandler(Menu menu, MenuAction action, int param1, int param2)
  */
 stock int SkillDetailMenuHandler(Menu menu, MenuAction action, int param1, int param2) {
     switch (action) {
+        /*
         case MenuAction_DrawItem:{
             int style;
             char info[32];
             menu.GetItem(param2, info, sizeof(info), style);
             return style;    
         }
+        */
         case MenuAction_Select: {
             char info[32];
             menu.GetItem(param2, info, sizeof(info));
-
+            PrintToServer("[AS:RPG] MenuAction_Select: menu info for item at %d: %s", param2, info);
             if (StrEqual(info, PURCHASECHOICE)) {
                 // Handle purchase action
                 HandlePurchaseSkill(param1, menu);
@@ -303,9 +305,12 @@ stock int SkillDetailMenuHandler(Menu menu, MenuAction action, int param1, int p
                 PrintToServer("[AS:RPG] Client %d selected unknown option: %s", param1, info);
             }
         }
-        case MenuAction_End: {
-            CloseHandle(menu);
+        case MenuAction_Cancel:{
+            int client = param1;
+            g_ClientLookingAtSkillID[client] = 0; // reset when they close the skilldetailmenu
+            // menu cancelation reason code is param2
         }
+        case MenuAction_End: {    CloseHandle(menu);    }
     }
     return 0;
 }
