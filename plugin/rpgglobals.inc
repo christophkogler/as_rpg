@@ -48,6 +48,12 @@ enum struct PlayerData {
     int skill_points;
     int kills;
     StringMap skillsTrie; // Trie to store skill ids (keys) and levels (values)
+
+    void Init(){
+        this.experience = 0;            this.level = 1;
+        this.skill_points = 0;          this.kills = 0;
+        this.skillsTrie = new StringMap(); // skillIDAsString, skill level -> key, val
+    }
 }
 
 /**
@@ -75,16 +81,19 @@ enum SkillType {
 
 // --------------------------- Variables, arrays ----------------------------------------
 
-Database g_hDatabase = null;                // Global database handle
-ArrayList g_SkillList = null;               // Global skill ArrayList handle
-
-int g_ClientToMarine[MAXPLAYERS + 1];                       // array that tracks which client goes to which marine: clienttomarine[client] = marine
-int g_ClientKillAccumulator[MAXPLAYERS + 1];                // array that tracks each alien a person kills              between db updates
-int g_ClientExperienceAccumulator[MAXPLAYERS + 1];          // array that tracks how much client each person has        between db updates
-
-PlayerData g_PlayerData[MAXPLAYERS + 1];                    // array of playerdata to hold player data? IDK, its NOT complete or ready.
-
 // --------------- These settings are tune-able without immediately breaking things. Use with caution. --------------------
 const float ExperienceSharingRate = 0.25; // 0 - inf. greather than 1 would be kind of dumb.
+// ------------------------------------------------------------------------------------------------------------------------
+
+// simple varaibles that can be fully initialized now
+int g_ClientToMarine[MAXPLAYERS + 1] = {-1};                        // which client goes to which marine. clienttomarine[client id] = marine entity id
+int g_ClientKillAccumulator[MAXPLAYERS + 1] = {0};                  // how many aliens a person has killed between db updates
+int g_ClientExperienceAccumulator[MAXPLAYERS + 1] = {0};            // how much experience each client has earned between db updates
+int g_ClientLookingAtSkillID[MAXPLAYERS+1] = {0};                   // the skill ID that the client is currently looking at in the skill detail menu.
+
+// these variables have their initialization completed on plugin startup.
+Database g_hDatabase = null;                    // Global database handle.
+StringMap g_SkillList = null;                   // Global StringMap of SkillData. skill id in database, SkillData for the skill -> key, value
+PlayerData g_PlayerData[MAXPLAYERS + 1];        // Global array of playerdata's to hold player data. g_PlayerData[clientID] = ClientPlayerData
 
 // ---------------------------------------------------------------------------------------------------------------------
