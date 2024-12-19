@@ -48,11 +48,9 @@ public void OnPluginStart()
 {
     PrintToServer("[AS:RPG] Initializing Alien Swarm: RPG!");
 
+    // Initialize some variables... 
+    // (this has to be done at runtime because... sourcepawn, I think? IDK. Seems to break if declared before plugin startup.)
     g_SkillList = new StringMap();
-
-    RegConsoleCmd("menu_test1", Menu_Test1);
-
-    // Initialize all playerdatas
     for (int i = 0; i <= MaxClients; i++){    g_PlayerData[i].Init();    }
 
     ConnectToDatabase(); // rpgdatabase.inc

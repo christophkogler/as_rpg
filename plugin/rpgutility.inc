@@ -382,6 +382,8 @@ stock void HookRelevantEvents(){
 stock void CreateCustomCommands(){
     RegConsoleCmd("sm_killcount", Command_KillCount);
     RegConsoleCmd("sm_listskills", Command_ListSkills, "List the skills in the database."); // 
+    
+    RegConsoleCmd("menu_test1", Menu_Test1);
 
     RegAdminCmd("sm_spawnentity", Command_SpawnEntity, ADMFLAG_GENERIC);
 
