@@ -170,4 +170,16 @@ stock Action Command_SetSkillLevel(int args){
     return Plugin_Handled;
 }
 
+/**
+ * @brief Command to open the main menu.
+ *
+ * @param client The client index.
+ * @param args The number of arguments.
+ * @return Action Indicates the command was handled.
+ */
+stock Action Command_MainMenu(int client, int args) {
+    ShowMainMenu(client);
+    return Plugin_Handled;
+}
+
 // ----------------------------------------------------------------------------------------------------------------
