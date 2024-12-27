@@ -72,34 +72,32 @@ stock void UpdateDatabase(){
     char sSteamID[32];
     char sQuery[512];
 
+    // for each connected client
     for (int client = 1; client <= MaxClients; client++){
-        if (IsClientInGame(client)){
+        if (IsClientInGame(client)){ // that is in the game
+
             GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
 
             // Update kills
-            if (g_ClientKillAccumulator[client] > 0){
-                Format(sQuery, sizeof(sQuery),
-                    "INSERT INTO players (steam_id, kills) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE kills = kills + %d",
-                    sSteamID, g_ClientKillAccumulator[client], g_ClientKillAccumulator[client]
-                );
-
-                // Pass client as 'data' to identify later
-                SQL_TQuery(g_hDatabase, OnUpdateKillCountFinished, sQuery, client);
-                g_ClientKillAccumulator[client] = 0; 
-            }
-
+            Format(sQuery, sizeof(sQuery),
+                "INSERT INTO players (steam_id, kills) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE kills = %d",
+                sSteamID, g_PlayerData[client].kills, g_PlayerData[client].kills
+            );
+            // Pass client as 'data' to identify later
+            SQL_TQuery(g_hDatabase, OnUpdateKillCountFinished, sQuery, client);
+            
             // Update experience
-            if (g_ClientExperienceAccumulator[client] > 0){
-                Format(sQuery, sizeof(sQuery),
-                    "INSERT INTO players (steam_id, experience) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE experience = experience + %d",
-                    sSteamID, g_ClientExperienceAccumulator[client], g_ClientExperienceAccumulator[client]
-                );
-                SQL_TQuery(g_hDatabase, OnUpdateExperienceFinished, sQuery, client);
-                g_ClientExperienceAccumulator[client] = 0;
-            }
+            Format(sQuery, sizeof(sQuery),
+                "INSERT INTO players (steam_id, experience) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE experience = %d",
+                sSteamID, g_PlayerData[client].experience, g_PlayerData[client].experience
+            );
+            SQL_TQuery(g_hDatabase, OnUpdateExperienceFinished, sQuery, client);
         }
     }
 }
+
+
+
 
 
 /**
@@ -182,8 +180,8 @@ stock void UpdatePlayerData(int client) {
     // Use client index as data for callback
     SQL_TQuery(g_hDatabase, OnFetchPlayerDataFinished, query, client);
 }
-
 //----------------------------------------------------------------------------------------------------------------
+
 
 
 // --------------------------------------- Database callback functions. -----------------------------------------
@@ -278,12 +276,10 @@ stock void OnInitializeSkillFinished(Handle owner, Handle queryHandle, const cha
 stock void OnGetPlayerKillCountFinished(Handle owner, Handle queryHandle, const char[] error, any data){
     // Unpack the context data
     Handle hContext = view_as<Handle>(data);
-
     int client = GetArrayCell(hContext, 0);
     bool bNotify = GetArrayCell(hContext, 1) == 1;
     char sSteamID[32];
     GetArrayString(hContext, 2, sSteamID, sizeof(sSteamID));
-
     CloseHandle(hContext); // Clean up handle after unpacking
 
     int playerKills = 0;
@@ -297,8 +293,6 @@ stock void OnGetPlayerKillCountFinished(Handle owner, Handle queryHandle, const 
             hasKills = true;
         }
     }
-
-    playerKills += g_ClientKillAccumulator[client];
 
     if (bNotify) {
         if (hasKills)
@@ -318,10 +312,10 @@ stock void OnGetPlayerKillCountFinished(Handle owner, Handle queryHandle, const 
  */
 stock void OnUpdateKillCountFinished(Handle owner, Handle queryHandle, const char[] error, any data){
     int client = data;
-    char sSteamID[32];
-    GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
+    //char sSteamID[32];
+    //GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
     if (error[0] != '\0' || queryHandle == INVALID_HANDLE || queryHandle == null){
-        PrintToServer("[AS:RPG] Failed to update kill count for player %s: %s", sSteamID, error);
+        PrintToServer("[AS:RPG] Failed to update kill count for client %d: %s", client, error);
     }
 }
 
@@ -447,7 +441,7 @@ stock void OnListSkillsFinished(Handle owner, Handle queryHandle, const char[] e
  * @param error An error message if the fetch failed.
  * @param data The client index associated with the fetch.
  */
-public void OnFetchPlayerDataFinished(Handle owner, Handle queryHandle, const char[] error, any data) {
+stock void OnFetchPlayerDataFinished(Handle owner, Handle queryHandle, const char[] error, any data) {
     //PrintToServer("[AS:RPG] Fetch callback started.");
 
     int client = view_as<int>(data);
@@ -467,6 +461,7 @@ public void OnFetchPlayerDataFinished(Handle owner, Handle queryHandle, const ch
     playerSkillDataTrie.Clear();
 
     bool firstLoop = true;
+    // query returns player joined with player_skills
     while (SQL_FetchRow(queryHandle)) {
         char sSteamID[32];      
         SQL_FetchString(queryHandle, 0, sSteamID, sizeof(sSteamID));
@@ -496,3 +491,115 @@ public void OnFetchPlayerDataFinished(Handle owner, Handle queryHandle, const ch
     PrintToServer("[AS:RPG] Client %d's player data updated!", client);
 }
 // -----------------------------------------------------------------------------------------------------------
+
+
+
+
+
+// ------------------------------ experimental, very wip, possible broken :D ----------------------------------------------------
+
+
+stock void UpdatePlayerSkillLevel(int client, int levels, int skillID) {
+    if (client <= 0 || levels == 0) {
+        return;
+    }
+
+    int finalSkillLevel = -1;
+
+    // Retrieve the player's current skill level from their data trie.
+    StringMap playerDataSkillsTrie = g_PlayerData[client].skillsTrie;
+    int currentSkillLevel = 0;
+    char skillIDStr[16];
+    IntToString(skillID, skillIDStr, sizeof(skillIDStr));
+    bool playerHasSkill = playerDataSkillsTrie.GetValue(skillIDStr, currentSkillLevel);
+
+    // Retrieve the skill data from the skill list.
+    SkillData skill;
+    if (!g_SkillList.GetArray(skillIDStr, skill, sizeof(skill))) {
+        PrintToServer("[AS:RPG] Error: Skill ID %s not found in skill list.", skillIDStr);
+        return;
+    }
+
+    // Calculate the final skill level and apply constraints.
+    finalSkillLevel = currentSkillLevel + levels;
+    if (finalSkillLevel > skill.maxLevel) {
+        PrintToServer("[AS:RPG] Client %d tried to exceed max level for skill %s (Max: %d).", client, skillIDStr, skill.maxLevel);
+        finalSkillLevel = skill.maxLevel;
+    }
+    if (finalSkillLevel < 0) {
+        PrintToServer("[AS:RPG] Client %d tried to reduce skill %s below 0.", client, skillIDStr);
+        finalSkillLevel = 0;
+    }
+
+    // Update the skill level in the player's data trie.
+    if (finalSkillLevel == 0) {    playerDataSkillsTrie.Remove(skillIDStr);    } 
+    else {    playerDataSkillsTrie.SetValue(skillIDStr, finalSkillLevel);    }
+
+    // Prepare the threaded query to update the database.
+    char query[256];
+    char sSteamID[32];
+    GetClientAuthId(client, AuthId_Steam2, sSteamID, sizeof(sSteamID));
+    // different queries based on target skill level / if player HAS skill already.
+
+    if (finalSkillLevel == 0) {
+        Format(query, sizeof(query), "DELETE FROM player_skills WHERE steam_id = '%s' AND skill_id = '%s';", sSteamID, skillIDStr);
+    } else if (!playerHasSkill) {
+        Format(query, sizeof(query), "INSERT INTO player_skills (steam_id, skill_id, skill_level) VALUES ('%s', '%s', %d);", sSteamID, skillIDStr, finalSkillLevel);
+    } else {
+        Format(query, sizeof(query), "UPDATE player_skills SET skill_level = %d WHERE steam_id = '%s' AND skill_id = '%s';", finalSkillLevel, sSteamID, skillIDStr);
+    }
+
+    // Execute the threaded query.
+    SQL_TQuery(g_hDatabase, OnPlayerSkillLevelUpdated, query);
+}
+
+stock void OnPlayerSkillLevelUpdated(Handle owner, Handle queryHandle, const char[] error, any data) {
+    if (error[0] != '\0') {
+        PrintToServer("[AS:RPG] Database query failed: %s", error);
+        return;
+    }
+
+    // Optional: Handle successful query results if needed.
+}
+
+// stock bool processExperienceTransaction(int client, int experienceDifference);
+    // int finalExperience = g_PlayerData[client].experience + experienceDifference
+    // if finalExperience < 0
+        // return false // client cannot afford the experience transaction
+
+    // update the client's experience in playerdata.
+    // update the client's experience in database.
+//
+
+/**
+ * @brief Updates the database with kills and experience for a client by steamID.
+ */
+stock void UpdatePlayerInDatabase(int client, char[] sSteamID){
+    //PrintToServer("[AS:RPG] Updating database with accumulated kills and experience.");
+    char sQuery[512];
+
+    // Update kills
+    Format(sQuery, sizeof(sQuery),
+        "INSERT INTO players (steam_id, kills) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE kills = %d",
+        sSteamID, g_PlayerData[client].kills, g_PlayerData[client].kills
+    );
+    // Pass client as 'data' to identify later
+    SQL_TQuery(g_hDatabase, OnUpdateKillCountFinished, sQuery, client);
+
+    // Update experience
+    Format(sQuery, sizeof(sQuery),
+        "INSERT INTO players (steam_id, experience) VALUES ('%s', %d) ON DUPLICATE KEY UPDATE experience = %d",
+        sSteamID, g_PlayerData[client].experience, g_PlayerData[client].experience
+    );
+
+    SQL_TQuery(g_hDatabase, OnUpdatePlayerFinished, sQuery, client);   
+}
+
+stock void OnUpdatePlayerFinished(Handle owner, Handle queryHandle, const char[] error, any data) {
+    if (error[0] != '\0') {
+        PrintToServer("[AS:RPG] Database query failed: %s", error);
+        return;
+    }
+
+    // Optional: Handle successful query results if needed.
+}
