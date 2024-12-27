@@ -11,12 +11,13 @@ Currently, it:
  - Uses an SQL database to hold players, player_skills, and skills tables.
  - Persistently tracks each player's stats (kills, experience).
  - Automatically implements a few dummy skills that do nothing.
- - Implements a menu system that doesn't do anything (besides display the list of available skills).
+ - Implements a menu system that allows acquiring and removing skills.
+ - Returns a bullet to your gun for every kill :)
  - Adds multiple commands!
-    - Adds console commands to let players see their current kill count and list skills.
-    - Adds an admin command to spawn an entity by name on their own marine.
-    - Adds a Server command to scale difficulty ConVars.
-    - Adds Server commands for creating and removing skills.
+    - Adds console commands to let players see their current kill count, open the main menu, and list all skills - sm_killcount, sm_menu, and sm_listskills.
+    - Adds an admin command to spawn an entity by name on their own marine, sm_spawnentity.
+    - Adds a Server command to scale difficulty ConVars, sm_difficultyscale.
+    - Adds Server commands for creating and removing skills, sm_addskill and sm_deleteskill.
 
 ### Setup:
 
