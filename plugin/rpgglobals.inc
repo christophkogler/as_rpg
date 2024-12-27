@@ -95,4 +95,11 @@ Database g_hDatabase = null;                    // Global database handle.
 StringMap g_SkillList = null;                   // Global StringMap of SkillData. skill id in database (int as string), SkillData for the skill -> key, value
 PlayerData g_PlayerData[MAXPLAYERS + 1];        // Global array of playerdata's to hold player data. g_PlayerData[clientID] = ClientPlayerData
 
+int g_MaxAmmoSlots = 48;  // AS:RD has 48 ammo types...?
+
+int g_OFFSET_Weapon_m_iPrimaryAmmoType = -1;    // entry point to weapon primary ammo type
+int g_OFFSET_Weapon_m_iClip1 = -1;              // entry point to ... amount in current magazine...?
+
+int g_OFFSET_Marine_m_iAmmo = -1; // entry point to marine ammo RESERVES table. 48 slots long, 0-47.
+// m_iHealth, m_iMaxHealth, m_fSpeedScale, 
 // ---------------------------------------------------------------------------------------------------------------------
